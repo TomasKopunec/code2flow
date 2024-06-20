@@ -1,16 +1,11 @@
-import argparse
 import collections
 import json
 import logging
 import os
 import subprocess
-import sys
 import time
 
 from .python import Python
-# from .javascript import Javascript
-# from .ruby import Ruby
-# from .php import PHP
 from .model import (TRUNK_COLOR, LEAF_COLOR, NODE_COLOR, GROUP_TYPE, OWNER_CONST,
                     Edge, Group, Node, Variable, is_installed, flatten)
 
@@ -217,9 +212,13 @@ def generate_json(nodes, edges):
         "edges": edges,
     }})
 
+def write_json(outfile, nodes, edges):
+    content = generate_json(nodes, edges)
+    outfile.write(content)
+    return
 
-def write_file(outfile, nodes, edges, groups, hide_legend=False,
-               no_grouping=False, as_json=False):
+def write_dot(outfile, nodes, edges, groups, hide_legend=False,
+               no_grouping=False):
     '''
     Write a dot file that can be read by graphviz
 
@@ -230,14 +229,7 @@ def write_file(outfile, nodes, edges, groups, hide_legend=False,
     :param hide_legend bool:
     :rtype: None
     '''
-
-    if as_json:
-        content = generate_json(nodes, edges)
-        outfile.write(content)
-        return
-
     splines = "polyline" if len(edges) >= 500 else "ortho"
-
     content = "digraph G {\n"
     content += "concentrate=true;\n"
     content += f'splines="{splines}";\n'
@@ -255,7 +247,7 @@ def write_file(outfile, nodes, edges, groups, hide_legend=False,
     outfile.write(content)
 
 
-def get_sources(raw_source_paths, language):
+def get_sources(raw_source_paths, language='py'):
     """
     Given a list of files and directories, return just files.
     Filter out files that are not of Python language
@@ -275,7 +267,7 @@ def get_sources(raw_source_paths, language):
 
     if not individual_files:
         raise AssertionError("No source files found from %r" % raw_source_paths)
-    logging.info("Found %d files from sources argument.", len(individual_files))
+    # logging.info("Found %d files from sources argument.", len(individual_files))
 
     sources = set()
     for source, explicity_added in individual_files:
@@ -292,13 +284,13 @@ def get_sources(raw_source_paths, language):
 
     sources = sorted(list(sources))
     logging.info("Processing %d source file(s)." % (len(sources)))
-    for source in sources:
-        logging.info("  " + source)
+    # for source in sources:
+    #     logging.info("  " + source)
 
     return sources
 
 
-def make_file_group(tree, filename, extension):
+def make_file_group(tree, filename):
     """
     Given an AST for the entire file, generate a file group complete with
     subgroups, nodes, etc.
@@ -306,14 +298,12 @@ def make_file_group(tree, filename, extension):
     :param tree ast:
     :param filename str:
     :param extension str:
-
-    :rtype: Group
     """
     language = Python
 
     subgroup_trees, node_trees, body_trees = language.separate_namespaces(tree)
     group_type = GROUP_TYPE.FILE
-    token = os.path.split(filename)[-1].rsplit('.' + extension, 1)[0]
+    token = os.path.split(filename)[-1].rsplit('.py', 1)[0]
     line_number = 0
     display_name = 'File'
     import_tokens = language.file_import_tokens(filename)
@@ -397,9 +387,9 @@ def _find_links(node_a, all_nodes):
     return list(filter(None, links))
 
 # TODO: Core function
-def map_it(sources, extension, no_trimming, exclude_namespaces, exclude_functions,
+def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
            include_only_namespaces, include_only_functions,
-           skip_parse_errors, lang_params):
+           skip_parse_errors):
     '''
     Given a language implementation and a list of filenames, do these things:
     1. Read/parse source ASTs
@@ -421,19 +411,12 @@ def map_it(sources, extension, no_trimming, exclude_namespaces, exclude_function
     :param bool skip_parse_errors:
     :param LanguageParams lang_params:
 
-    :rtype: (list[Group], list[Node], list[Edge])
     '''
-
-    language = Python
-
-    # 0. Assert dependencies
-    language.assert_dependencies()
-
     # 1. Read/parse source ASTs
     file_ast_trees = []
     for source in sources:
         try:
-            file_ast_trees.append((source, language.get_tree(source)))
+            file_ast_trees.append((source, Python.get_tree(source)))
         except Exception as ex:
             if skip_parse_errors:
                 logging.warning("Could not parse %r. (%r) Skipping...", source, ex)
@@ -443,7 +426,7 @@ def map_it(sources, extension, no_trimming, exclude_namespaces, exclude_function
     # 2. Find all groups (classes/modules) and nodes (functions) (a lot happens here)
     file_groups = []
     for source, file_ast_tree in file_ast_trees:
-        file_group = make_file_group(file_ast_tree, source, extension)
+        file_group = make_file_group(file_ast_tree, source)
         file_groups.append(file_group)
 
     # 3. Trim namespaces / functions to exactly what we want
@@ -603,6 +586,42 @@ def _limit_functions(file_groups, exclude_functions, include_only_functions):
                              "because it was not found.")
     return file_groups
 
+def _generate_json(output_dir, all_nodes, edges):
+    json_file_name = os.path.join(output_dir, 'graph.json')
+    with open(json_file_name, 'w') as f:
+        write_json(f, all_nodes, edges)
+    logging.info("Wrote JSON output file %r with %d nodes and %d edges.",
+            json_file_name, len(all_nodes), len(edges))
+
+def _generate_img(output_dir, all_nodes, edges, file_groups, hide_legend, no_grouping):
+    if not is_installed('dot') and not is_installed('dot.exe'):
+        raise AssertionError(
+            "Can't generate a flowchart image because neither `dot` nor `dot.exe` was found. ")
+    
+    # Write dot file
+    dot_file_name = os.path.join(output_dir, 'graph.gv')
+    with open(dot_file_name, 'w') as f:
+        write_dot(f, all_nodes, edges, file_groups, hide_legend=hide_legend, no_grouping=no_grouping)
+        
+    # Write image file
+    img_file_name = os.path.join(output_dir, 'graph.png')
+    _generate_final_img(dot_file_name, 'png', img_file_name)
+    
+    # Delete dot file
+    os.remove(dot_file_name)
+    logging.info("Wrote image file %r with %d nodes and %d edges.",
+             img_file_name, len(all_nodes), len(edges))
+
+def _generate_final_img(output_file, extension, final_img_filename):
+    """
+    Write the graphviz file
+    :param str output_file:
+    :param str extension:
+    :param str final_img_filename:
+    :param int num_edges:
+    """
+    _generate_graphviz(output_file, extension, final_img_filename)
+    logging.info("Completed flowchart! To see it, open %r.", final_img_filename)
 
 def _generate_graphviz(output_file, extension, final_img_filename):
     """
@@ -623,30 +642,17 @@ def _generate_graphviz(output_file, extension, final_img_filename):
                             "Try running %r for more detail ***", ' '.join(command + ['-v', '-O']))
 
 
-def _generate_final_img(output_file, extension, final_img_filename, num_edges):
-    """
-    Write the graphviz file
-    :param str output_file:
-    :param str extension:
-    :param str final_img_filename:
-    :param int num_edges:
-    """
-    _generate_graphviz(output_file, extension, final_img_filename)
-    logging.info("Completed your flowchart! To see it, open %r.",
-                 final_img_filename)
-
-
-def code2flow(raw_source_paths, output_file, hide_legend=True,
+def code2flow(raw_source_paths, output_dir, hide_legend=True,
               exclude_namespaces=None, exclude_functions=None,
               include_only_namespaces=None, include_only_functions=None,
               no_grouping=False, no_trimming=False, skip_parse_errors=False,
-              lang_params=None, subset_params=None, level=logging.INFO):
+              generate_json=True, generate_image=True, level=logging.INFO):
     """
     Top-level function. Generate a diagram based on source code.
     Can generate either a dotfile or an image.
 
     :param list[str] raw_source_paths: file or directory paths
-    :param str|file output_file: path to the output file. SVG/PNG will generate an image.
+    :param str| output_dir: path to the output dir.
     :param bool hide_legend: Omit the legend from the output
     :param list exclude_namespaces: List of namespaces to exclude
     :param list exclude_functions: List of functions to exclude
@@ -658,14 +664,11 @@ def code2flow(raw_source_paths, output_file, hide_legend=True,
     :param lang_params LanguageParams: Object to store lang-specific params
     :param subset_params SubsetParams: Object to store subset-specific params
     :param int level: logging level
-    :rtype: None
     """
-    start_time = time.time()
+    start_time = time.time() # Start timer
 
     if not isinstance(raw_source_paths, list):
         raw_source_paths = [raw_source_paths]
-    lang_params = lang_params or LanguageParams() # TODO
-
     exclude_namespaces = exclude_namespaces or []
     assert isinstance(exclude_namespaces, list)
     exclude_functions = exclude_functions or []
@@ -675,62 +678,29 @@ def code2flow(raw_source_paths, output_file, hide_legend=True,
     include_only_functions = include_only_functions or []
     assert isinstance(include_only_functions, list)
 
+    # Configure logging
     logging.basicConfig(format="Code2Flow: %(message)s", level=level)
 
-    language = 'py'
-    sources = get_sources(raw_source_paths, language)
+    sources = get_sources(raw_source_paths)
 
-    output_ext = None
-    if isinstance(output_file, str):
-        assert '.' in output_file, "Output filename must end in one of: %r." % set(VALID_EXTENSIONS)
-        output_ext = output_file.rsplit('.', 1)[1] or ''
-        assert output_ext in VALID_EXTENSIONS, "Output filename must end in one of: %r." % \
-                                               set(VALID_EXTENSIONS)
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    final_img_filename = None
-    if output_ext and output_ext in IMAGE_EXTENSIONS:
-        if not is_installed('dot') and not is_installed('dot.exe'):
-            raise AssertionError(
-                "Can't generate a flowchart image because neither `dot` nor "
-                "`dot.exe` was found. Either install graphviz (see the README) "
-                "or, if you just want an intermediate text file, set your --output "
-                "file to use a supported text extension: %r" % set(TEXT_EXTENSIONS))
-        final_img_filename = output_file
-        output_file, extension = output_file.rsplit('.', 1)
-        output_file += '.gv'
-
-    file_groups, all_nodes, edges = map_it(sources, language, no_trimming,
+    # Primary processing
+    file_groups, all_nodes, edges = map_it(sources, no_trimming,
                                            exclude_namespaces, exclude_functions,
                                            include_only_namespaces, include_only_functions,
-                                           skip_parse_errors, lang_params)
+                                           skip_parse_errors)
 
-    if subset_params:
-        logging.info("Filtering into subset...")
-        file_groups, all_nodes, edges = _filter_for_subset(subset_params, all_nodes, edges, file_groups)
-
+    # Sort for deterministic output
     file_groups.sort()
     all_nodes.sort()
     edges.sort()
 
-    logging.info("Generating output file...")
+    if generate_json:
+        _generate_json(output_dir, all_nodes, edges)
+    if generate_image:
+        _generate_img(output_dir, all_nodes, edges, file_groups, hide_legend, no_grouping)
 
-    if isinstance(output_file, str):
-        with open(output_file, 'w') as fh:
-            as_json = output_ext == 'json'
-            write_file(fh, nodes=all_nodes, edges=edges,
-                       groups=file_groups, hide_legend=hide_legend,
-                       no_grouping=no_grouping, as_json=as_json)
-    else:
-        write_file(output_file, nodes=all_nodes, edges=edges,
-                   groups=file_groups, hide_legend=hide_legend,
-                   no_grouping=no_grouping)
-
-    logging.info("Wrote output file %r with %d nodes and %d edges.",
-                 output_file, len(all_nodes), len(edges))
-    if not output_ext == 'json':
-        logging.info("For better machine readability, you can also try outputting in a json format.")
     logging.info("Code2flow finished processing in %.2f seconds." % (time.time() - start_time))
-
-    # translate to an image if that was requested
-    if final_img_filename:
-        _generate_final_img(output_file, extension, final_img_filename, len(edges))
