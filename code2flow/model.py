@@ -247,8 +247,8 @@ class Call():
                     if parts[1] == node.namespace_ownership() \
                        and self.token == node.token:
                         return node
-
             return None
+        
         if self.token == variable.token:
             if isinstance(variable.points_to, Node):
                 return variable.points_to

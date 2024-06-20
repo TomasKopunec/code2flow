@@ -297,7 +297,7 @@ def make_file_group(tree, filename):
     return file_group
 
 
-def _find_link_for_call(call : Call, node_a : Node, all_nodes):
+def _find_link_for_call(call : Call, node_a : Node, all_nodes, external : set[str], all_group_names : set[str]):
     """
     Given a call that happened on a node (node_a), return the node
     that the call links to and the call itself if >1 node matched.
@@ -321,6 +321,15 @@ def _find_link_for_call(call : Call, node_a : Node, all_nodes):
             assert isinstance(var_match, Node)
             return var_match, None
 
+    # Save external calls
+    if not call.owner_token:
+        resolved = _resolve_module_import_(node_a.parent, call)
+        external.add(call.token if not resolved else resolved)
+    else:
+        resolved = _resolve_module_import(node_a.parent, call)
+        if resolved and resolved not in all_group_names:
+            external.add(f'{resolved}.{call.token}')
+
     possible_nodes = []
     if call.is_attr():
         for node in all_nodes:
@@ -343,8 +352,23 @@ def _find_link_for_call(call : Call, node_a : Node, all_nodes):
         return None, call
     return None, None
 
+def _resolve_module_import(node, call):
+    while node.group_type != GROUP_TYPE.FILE:
+        node = node.parent
+    for variable in node.get_variables():
+        if variable.token == call.owner_token:
+            return variable.points_to
+    return None
 
-def _find_links(node_a, all_nodes):
+def _resolve_module_import_(node, call):
+    while node.group_type != GROUP_TYPE.FILE:
+        node = node.parent
+    for variable in node.get_variables():
+        if variable.token == call.token:
+            return variable.points_to
+    return None
+
+def _find_links(node_a, all_nodes, external, all_group_names):
     """
     Iterate through the calls on node_a to find everything the node links to.
     This will return a list of tuples of nodes and calls that were ambiguous.
@@ -357,12 +381,10 @@ def _find_links(node_a, all_nodes):
 
     links = []
     for call in node_a.calls:
-        lfc = _find_link_for_call(call, node_a, all_nodes)
+        lfc = _find_link_for_call(call, node_a, all_nodes, external, all_group_names)
         assert not isinstance(lfc, Group)
         links.append(lfc)
     return list(filter(None, links))
-
-# TODO: Core function
 
 
 def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
@@ -451,24 +473,22 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
     logging.info("Found calls %r." % sorted(all_calls))
     logging.info("Found variables %r." % sorted(variables))
 
-    # external = set()
-    # for node in all_nodes:
-    #     for call in node.calls:
-    #         if not call.owner_token:
-    #             external.add(call.to_string())
-    # print(external)
+    # 6. Find external calls
+    all_group_names = set([g.token for g in all_subgroups]) # All modules / classes
+    external = set()
 
-    # 6. Find all calls between all nodes
+    # 7. Find all calls between all nodes
     bad_calls = []
     edges = []
     for node_a in list(all_nodes):
-        links = _find_links(node_a, all_nodes)
+        links = _find_links(node_a, all_nodes, external, all_group_names)
         for node_b, bad_call in links:
             if bad_call:
                 bad_calls.append(bad_call)
             if not node_b:
                 continue
             edges.append(Edge(node_a, node_b))
+    logging.info("Found external calls %r." % sorted(external))
 
     # 7. Loudly complain about duplicate edges that were skipped
     bad_calls_strings = set()
