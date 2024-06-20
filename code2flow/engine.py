@@ -322,13 +322,16 @@ def _find_link_for_call(call : Call, node_a : Node, all_nodes, external : set[st
             return var_match, None
 
     # Save external calls
-    if not call.owner_token:
+    method_name = None
+    if not call.owner_token and not call.token in all_group_names:
         resolved = _resolve_module_import_(node_a.parent, call)
-        external.add(call.token if not resolved else resolved)
+        method_name = call.token if not resolved else resolved
+        external.add(method_name)
     else:
         resolved = _resolve_module_import(node_a.parent, call)
         if resolved and resolved not in all_group_names:
-            external.add(f'{resolved}.{call.token}')
+            method_name = f'{resolved}.{call.token}'
+            external.add(method_name)
 
     possible_nodes = []
     if call.is_attr():
@@ -337,6 +340,9 @@ def _find_link_for_call(call : Call, node_a : Node, all_nodes, external : set[st
             # function a() {b = Obj(); b.a()}
             if call.token == node.token and node.parent != node_a.file_group():
                 possible_nodes.append(node)
+    elif method_name and method_name in external:
+        possible_nodes.append(Node.external_node(method_name))
+        # possible_nodes.append(Node(method_name, [], [], None, None, None))
     else:
         for node in all_nodes:
             if call.token == node.token \
@@ -345,7 +351,7 @@ def _find_link_for_call(call : Call, node_a : Node, all_nodes, external : set[st
                 possible_nodes.append(node)
             elif call.token == node.parent.token and node.is_constructor:
                 possible_nodes.append(node)
-
+    
     if len(possible_nodes) == 1:
         return possible_nodes[0], None
     if len(possible_nodes) > 1:
@@ -713,10 +719,17 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
                                            skip_parse_errors)
 
     # Sort for deterministic output
-    file_groups.sort()
+    unique = {}
+    for node in all_nodes:
+        unique[node.uid] = node
+    all_nodes = list(unique.values())
     all_nodes.sort()
+    
+    file_groups.sort()
     edges.sort()
 
+    # Make all_nodes that start with _external unique
+    
     if generate_json:
         _generate_json(output_dir, all_nodes, edges)
     if generate_image:

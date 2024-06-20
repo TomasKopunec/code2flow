@@ -260,6 +260,12 @@ class Call():
 
 
 class Node():
+    @staticmethod
+    def external_node(method_name : str):
+        n = Node(method_name, [], [], None)
+        n.uid = f'external_{method_name.replace(".", "_")}'
+        return n
+    
     def __init__(self, token, calls, variables, parent, import_tokens=None,
                  line_number=None, is_constructor=False):
         self.token = token
@@ -280,14 +286,18 @@ class Node():
         return f"<Node token={self.token} parent={self.parent}>"
 
     def __lt__(self, other):
-            return self.name() < other.name()
+        return self.name() < other.name()
 
     def name(self):
         """
         Names exist largely for unit tests and deterministic node sorting
         :rtype: str
         """
-        return f"{self.first_group().filename()}::{self.token_with_ownership()}"
+        group = self.first_group()
+        if not group:
+            return f'EXTERNAL::{self.token}'
+        else:
+            return f"{self.first_group().filename()}::{self.token_with_ownership()}"
 
     def first_group(self):
         """
@@ -295,6 +305,10 @@ class Node():
         :rtype: Group
         """
         parent = self.parent
+        
+        if not parent:
+            return None
+        
         while not isinstance(parent, Group):
             parent = parent.parent
         return parent
@@ -353,6 +367,9 @@ class Node():
         Remove this node from it's parent. This effectively deletes the node.
         :rtype: None
         """
+        group = self.first_group()
+        if not group:
+            return
         self.first_group().nodes = [n for n in self.first_group().nodes if n != self]
 
     def get_variables(self, line_number=None) -> list[Variable]:
