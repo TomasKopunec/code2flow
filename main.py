@@ -17,10 +17,10 @@ project_path = './projects/simple'
 
 code2flow(
     project_path,
-    output_file='graph.json'
+    output_file='./output/graph.json'
 )
 code2flow(
     project_path,
-    output_file='graph.dot'
+    output_file='./output/graph.dot'
 )
-convert_dot_to_png('graph.dot', 'graph.png')
+convert_dot_to_png('./output/graph.dot', './output/graph.png')
