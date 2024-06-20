@@ -164,22 +164,6 @@ def _filter_groups_for_subset(new_nodes, file_groups):
     return new_file_groups
 
 
-def _filter_for_subset(subset_params, all_nodes, edges, file_groups):
-    """
-    Given subset_params, return the subset of nodes, edges, and groups
-    upstream and downstream of the target node.
-    :param subset_params SubsetParams:
-    :param all_nodes list[Node]:
-    :param edges list[Edge]:
-    :param file_groups list[Group]:
-    :rtype: list[Group], list[Node], list[Edge]
-    """
-    new_nodes = _filter_nodes_for_subset(subset_params, all_nodes, edges)
-    new_edges = _filter_edges_for_subset(new_nodes, edges)
-    new_file_groups = _filter_groups_for_subset(new_nodes, file_groups)
-    return new_file_groups, list(new_nodes), new_edges
-
-
 def generate_json(nodes, edges):
     '''
     Generate a json string from nodes and edges
@@ -274,8 +258,8 @@ def get_sources(raw_source_paths, language='py'):
 
     sources = sorted(list(sources))
     logging.info("Processing %d source file(s)." % (len(sources)))
-    # for source in sources:
-    #     logging.info("  " + source)
+    for source in sources:
+        logging.info("  " + source)
 
     return sources
 
