@@ -4,9 +4,10 @@ import logging
 import os
 import subprocess
 import time
+from astunparse import unparse
 
 from .python import Python
-from .model import (TRUNK_COLOR, LEAF_COLOR, NODE_COLOR, GROUP_TYPE, OWNER_CONST,
+from .model import (TRUNK_COLOR, LEAF_COLOR, NODE_COLOR, GROUP_TYPE, OWNER_CONST, Call,
                     Edge, Group, Node, Variable, is_installed, flatten)
 
 LEGEND = """subgraph legend{
@@ -274,7 +275,6 @@ def make_file_group(tree, filename):
     :param extension str:
     """
     language = Python
-
     subgroup_trees, node_trees, body_trees = language.separate_namespaces(tree)
     group_type = GROUP_TYPE.FILE
     token = os.path.split(filename)[-1].rsplit('.py', 1)[0]
@@ -297,7 +297,7 @@ def make_file_group(tree, filename):
     return file_group
 
 
-def _find_link_for_call(call, node_a, all_nodes):
+def _find_link_for_call(call : Call, node_a : Node, all_nodes):
     """
     Given a call that happened on a node (node_a), return the node
     that the call links to and the call itself if >1 node matched.
@@ -390,7 +390,7 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
     :param LanguageParams lang_params:
 
     '''
-    # 1. Read/parse source ASTs
+    # 1. Read/parse source ASTs (List of (source : str, ast : Module) tuples)
     file_ast_trees = []
     for source in sources:
         try:
@@ -408,7 +408,7 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
         file_group = make_file_group(file_ast_tree, source)
         file_groups.append(file_group)
 
-    # 3. Trim namespaces / functions to exactly what we want
+    # 3. Trim namespaces / functions to exactly what we want (optional)
     if exclude_namespaces or include_only_namespaces:
         file_groups = _limit_namespaces(
             file_groups, exclude_namespaces, include_only_namespaces)
@@ -417,8 +417,8 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
             file_groups, exclude_functions, include_only_functions)
 
     # 4. Consolidate structures
-    all_subgroups = flatten(g.all_groups() for g in file_groups)
-    all_nodes = flatten(g.all_nodes() for g in file_groups)
+    all_subgroups = flatten(g.all_groups() for g in file_groups) # All modules / classes
+    all_nodes = flatten(g.all_nodes() for g in file_groups) # All functions
 
     nodes_by_subgroup_token = collections.defaultdict(list)
     for subgroup in all_subgroups:
@@ -441,14 +441,22 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
     for node in all_nodes:
         node.resolve_variables(file_groups)
 
+    nodes = sorted(n.token_with_ownership() for n in all_nodes)
+    all_calls = list(set(c.to_string() for c in flatten(n.calls for n in all_nodes)))
+    variables = list(set(v.to_string() for v in flatten(n.variables for n in all_nodes)))
+
     # Not a step. Just log what we know so far
     logging.info("Found groups %r." % [g.label() for g in all_subgroups])
-    logging.info("Found nodes %r." % sorted(
-        n.token_with_ownership() for n in all_nodes))
-    logging.info("Found calls %r." % sorted(list(set(c.to_string() for c in
-                                                     flatten(n.calls for n in all_nodes)))))
-    logging.info("Found variables %r." % sorted(list(set(v.to_string() for v in
-                                                         flatten(n.variables for n in all_nodes)))))
+    logging.info("Found nodes %r." % nodes)
+    logging.info("Found calls %r." % sorted(all_calls))
+    logging.info("Found variables %r." % sorted(variables))
+
+    # external = set()
+    # for node in all_nodes:
+    #     for call in node.calls:
+    #         if not call.owner_token:
+    #             external.add(call.to_string())
+    # print(external)
 
     # 6. Find all calls between all nodes
     bad_calls = []
@@ -595,7 +603,7 @@ def _generate_img(output_dir, all_nodes, edges, file_groups, hide_legend, no_gro
     _generate_final_img(dot_file_name, 'png', img_file_name)
 
     # Delete dot file
-    os.remove(dot_file_name)
+    # os.remove(dot_file_name)
     logging.info("Wrote image file %r with %d nodes and %d edges.",
                  img_file_name, len(all_nodes), len(edges))
 

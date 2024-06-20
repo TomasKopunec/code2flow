@@ -80,7 +80,7 @@ def _resolve_str_variable(variable, file_groups):
         for group in file_group.all_groups():
             if any(ot == variable.points_to for ot in group.import_tokens):
                 return group
-    return OWNER_CONST.UNKNOWN_MODULE
+    return variable.points_to
 
 
 class BaseLanguage(abc.ABC):
@@ -355,7 +355,7 @@ class Node():
         """
         self.first_group().nodes = [n for n in self.first_group().nodes if n != self]
 
-    def get_variables(self, line_number=None):
+    def get_variables(self, line_number=None) -> list[Variable]:
         """
         Get variables in-scope on the line number.
         This includes all local variables as-well-as outer-scope variables
@@ -492,7 +492,7 @@ class Group():
     Groups represent namespaces (classes and modules/files)
     """
     def __init__(self, token, group_type, display_type, import_tokens=None,
-                 line_number=None, parent=None, inherits=None):
+                 line_number=None, parent=None, inherits=None, external=[]):
         self.token = token
         self.line_number = line_number
         self.nodes = []
@@ -504,8 +504,8 @@ class Group():
         self.import_tokens = import_tokens or []
         self.inherits = inherits or []
         assert group_type in GROUP_TYPE
-
         self.uid = "cluster_" + os.urandom(4).hex()  # group doesn't work by syntax rules
+        self.external = external
 
     def __repr__(self):
         return f"<Group token={self.token} type={self.display_type}>"
