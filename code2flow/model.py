@@ -86,7 +86,7 @@ def _resolve_str_variable(variable, file_groups):
 class BaseLanguage(abc.ABC):
     """
     Languages are individual implementations for different dynamic languages.
-    This is the superclass of Python, Javascript, PHP, and Ruby.
+    This is the superclass of Python.
     Every implementation must implement all of these methods.
     For more detail, see the individual implementations.
     Note that the 'Tree' type is generic and will be a different
@@ -102,7 +102,7 @@ class BaseLanguage(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def get_tree(filename, lang_params):
+    def get_tree(filename):
         """
         :param filename str:
         :rtype: Tree

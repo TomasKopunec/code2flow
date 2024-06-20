@@ -146,7 +146,7 @@ class Python(BaseLanguage):
         pass
 
     @staticmethod
-    def get_tree(filename, _):
+    def get_tree(filename):
         """
         Get the entire AST for this file
 
