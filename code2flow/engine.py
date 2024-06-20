@@ -8,9 +8,9 @@ import sys
 import time
 
 from .python import Python
-from .javascript import Javascript
-from .ruby import Ruby
-from .php import PHP
+# from .javascript import Javascript
+# from .ruby import Ruby
+# from .php import PHP
 from .model import (TRUNK_COLOR, LEAF_COLOR, NODE_COLOR, GROUP_TYPE, OWNER_CONST,
                     Edge, Group, Node, Variable, is_installed, flatten)
 
@@ -37,16 +37,6 @@ LEGEND = """subgraph legend{
         </table></td></tr></table>
         >];
 }""" % (NODE_COLOR, TRUNK_COLOR, LEAF_COLOR)
-
-
-LANGUAGES = {
-    'py': Python,
-    'js': Javascript,
-    'mjs': Javascript,
-    'rb': Ruby,
-    'php': PHP,
-}
-
 
 class LanguageParams():
     """
@@ -265,34 +255,15 @@ def write_file(outfile, nodes, edges, groups, hide_legend=False,
     outfile.write(content)
 
 
-def determine_language(individual_files):
-    """
-    Given a list of filepaths, determine the language from the first
-    valid extension
-
-    :param list[str] individual_files:
-    :rtype: str
-    """
-    for source, _ in individual_files:
-        suffix = source.rsplit('.', 1)[-1]
-        if suffix in LANGUAGES:
-            logging.info("Implicitly detected language as %r.", suffix)
-            return suffix
-    raise AssertionError(f"Language could not be detected from input {individual_files}. ",
-                         "Try explicitly passing the language flag.")
-
-
-def get_sources_and_language(raw_source_paths, language):
+def get_sources(raw_source_paths, language):
     """
     Given a list of files and directories, return just files.
-    If we are not passed a language, determine it.
-    Filter out files that are not of that language
+    Filter out files that are not of Python language
 
     :param list[str] raw_source_paths: file or directory paths
-    :param str|None language: Input language
     :rtype: (list, str)
     """
-
+    
     individual_files = []
     for source in sorted(raw_source_paths):
         if os.path.isfile(source):
@@ -305,9 +276,6 @@ def get_sources_and_language(raw_source_paths, language):
     if not individual_files:
         raise AssertionError("No source files found from %r" % raw_source_paths)
     logging.info("Found %d files from sources argument.", len(individual_files))
-
-    if not language:
-        language = determine_language(individual_files)
 
     sources = set()
     for source, explicity_added in individual_files:
@@ -327,7 +295,7 @@ def get_sources_and_language(raw_source_paths, language):
     for source in sources:
         logging.info("  " + source)
 
-    return sources, language
+    return sources
 
 
 def make_file_group(tree, filename, extension):
@@ -341,7 +309,7 @@ def make_file_group(tree, filename, extension):
 
     :rtype: Group
     """
-    language = LANGUAGES[extension]
+    language = Python
 
     subgroup_trees, node_trees, body_trees = language.separate_namespaces(tree)
     group_type = GROUP_TYPE.FILE
@@ -428,7 +396,7 @@ def _find_links(node_a, all_nodes):
         links.append(lfc)
     return list(filter(None, links))
 
-
+# TODO: Core function
 def map_it(sources, extension, no_trimming, exclude_namespaces, exclude_functions,
            include_only_namespaces, include_only_functions,
            skip_parse_errors, lang_params):
@@ -456,7 +424,7 @@ def map_it(sources, extension, no_trimming, exclude_namespaces, exclude_function
     :rtype: (list[Group], list[Node], list[Edge])
     '''
 
-    language = LANGUAGES[extension]
+    language = Python
 
     # 0. Assert dependencies
     language.assert_dependencies()
@@ -668,7 +636,7 @@ def _generate_final_img(output_file, extension, final_img_filename, num_edges):
                  final_img_filename)
 
 
-def code2flow(raw_source_paths, output_file, language=None, hide_legend=True,
+def code2flow(raw_source_paths, output_file, hide_legend=True,
               exclude_namespaces=None, exclude_functions=None,
               include_only_namespaces=None, include_only_functions=None,
               no_grouping=False, no_trimming=False, skip_parse_errors=False,
@@ -679,7 +647,6 @@ def code2flow(raw_source_paths, output_file, language=None, hide_legend=True,
 
     :param list[str] raw_source_paths: file or directory paths
     :param str|file output_file: path to the output file. SVG/PNG will generate an image.
-    :param str language: input language extension
     :param bool hide_legend: Omit the legend from the output
     :param list exclude_namespaces: List of namespaces to exclude
     :param list exclude_functions: List of functions to exclude
@@ -697,7 +664,7 @@ def code2flow(raw_source_paths, output_file, language=None, hide_legend=True,
 
     if not isinstance(raw_source_paths, list):
         raw_source_paths = [raw_source_paths]
-    lang_params = lang_params or LanguageParams()
+    lang_params = lang_params or LanguageParams() # TODO
 
     exclude_namespaces = exclude_namespaces or []
     assert isinstance(exclude_namespaces, list)
@@ -710,7 +677,8 @@ def code2flow(raw_source_paths, output_file, language=None, hide_legend=True,
 
     logging.basicConfig(format="Code2Flow: %(message)s", level=level)
 
-    sources, language = get_sources_and_language(raw_source_paths, language)
+    language = 'py'
+    sources = get_sources(raw_source_paths, language)
 
     output_ext = None
     if isinstance(output_file, str):
