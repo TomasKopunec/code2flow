@@ -9,16 +9,6 @@ from .python import Python
 from .model import (TRUNK_COLOR, LEAF_COLOR, NODE_COLOR, GROUP_TYPE, OWNER_CONST,
                     Edge, Group, Node, Variable, is_installed, flatten)
 
-VERSION = '2.5.1'
-
-IMAGE_EXTENSIONS = ('png', 'svg')
-TEXT_EXTENSIONS = ('dot', 'gv', 'json')
-VALID_EXTENSIONS = IMAGE_EXTENSIONS + TEXT_EXTENSIONS
-
-DESCRIPTION = "Generate flow charts from your source code. " \
-              "See the README at https://github.com/scottrogowski/code2flow."
-
-
 LEGEND = """subgraph legend{
     rank = min;
     label = "legend";
@@ -33,19 +23,12 @@ LEGEND = """subgraph legend{
         >];
 }""" % (NODE_COLOR, TRUNK_COLOR, LEAF_COLOR)
 
-class LanguageParams():
-    """
-    Shallow structure to make storing language-specific parameters cleaner
-    """
-    def __init__(self, source_type='script', ruby_version='27'):
-        self.source_type = source_type
-        self.ruby_version = ruby_version
-
 
 class SubsetParams():
     """
     Shallow structure to make storing subset-specific parameters cleaner.
     """
+
     def __init__(self, target_function, upstream_depth, downstream_depth):
         self.target_function = target_function
         self.upstream_depth = upstream_depth
@@ -63,22 +46,25 @@ class SubsetParams():
             raise AssertionError("--upstream-depth requires --target-function")
 
         if downstream_depth and not target_function:
-            raise AssertionError("--downstream-depth requires --target-function")
+            raise AssertionError(
+                "--downstream-depth requires --target-function")
 
         if not target_function:
             return None
 
         if not (upstream_depth or downstream_depth):
-            raise AssertionError("--target-function requires --upstream-depth or --downstream-depth")
+            raise AssertionError(
+                "--target-function requires --upstream-depth or --downstream-depth")
 
         if upstream_depth < 0:
-            raise AssertionError("--upstream-depth must be >= 0. Exclude argument for complete depth.")
+            raise AssertionError(
+                "--upstream-depth must be >= 0. Exclude argument for complete depth.")
 
         if downstream_depth < 0:
-            raise AssertionError("--downstream-depth must be >= 0. Exclude argument for complete depth.")
+            raise AssertionError(
+                "--downstream-depth must be >= 0. Exclude argument for complete depth.")
 
         return SubsetParams(target_function, upstream_depth, downstream_depth)
-
 
 
 def _find_target_node(subset_params, all_nodes):
@@ -95,7 +81,8 @@ def _find_target_node(subset_params, all_nodes):
            node.name() == subset_params.target_function:
             target_nodes.append(node)
     if not target_nodes:
-        raise AssertionError("Could not find node %r to build a subset." % subset_params.target_function)
+        raise AssertionError(
+            "Could not find node %r to build a subset." % subset_params.target_function)
     if len(target_nodes) > 1:
         raise AssertionError("Found multiple nodes for %r: %r. Try either a `class.func` or "
                              "`filename::class.func`." % (subset_params.target_function, target_nodes))
@@ -212,13 +199,15 @@ def generate_json(nodes, edges):
         "edges": edges,
     }})
 
+
 def write_json(outfile, nodes, edges):
     content = generate_json(nodes, edges)
     outfile.write(content)
     return
 
+
 def write_dot(outfile, nodes, edges, groups, hide_legend=False,
-               no_grouping=False):
+              no_grouping=False):
     '''
     Write a dot file that can be read by graphviz
 
@@ -255,7 +244,7 @@ def get_sources(raw_source_paths, language='py'):
     :param list[str] raw_source_paths: file or directory paths
     :rtype: (list, str)
     """
-    
+
     individual_files = []
     for source in sorted(raw_source_paths):
         if os.path.isfile(source):
@@ -266,7 +255,8 @@ def get_sources(raw_source_paths, language='py'):
                 individual_files.append((os.path.join(root, f), False))
 
     if not individual_files:
-        raise AssertionError("No source files found from %r" % raw_source_paths)
+        raise AssertionError("No source files found from %r" %
+                             raw_source_paths)
     # logging.info("Found %d files from sources argument.", len(individual_files))
 
     sources = set()
@@ -314,10 +304,12 @@ def make_file_group(tree, filename):
         for new_node in language.make_nodes(node_tree, parent=file_group):
             file_group.add_node(new_node)
 
-    file_group.add_node(language.make_root_node(body_trees, parent=file_group), is_root=True)
+    file_group.add_node(language.make_root_node(
+        body_trees, parent=file_group), is_root=True)
 
     for subgroup_tree in subgroup_trees:
-        file_group.add_subgroup(language.make_class_group(subgroup_tree, parent=file_group))
+        file_group.add_subgroup(language.make_class_group(
+            subgroup_tree, parent=file_group))
     return file_group
 
 
@@ -387,6 +379,8 @@ def _find_links(node_a, all_nodes):
     return list(filter(None, links))
 
 # TODO: Core function
+
+
 def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
            include_only_namespaces, include_only_functions,
            skip_parse_errors):
@@ -419,7 +413,8 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
             file_ast_trees.append((source, Python.get_tree(source)))
         except Exception as ex:
             if skip_parse_errors:
-                logging.warning("Could not parse %r. (%r) Skipping...", source, ex)
+                logging.warning(
+                    "Could not parse %r. (%r) Skipping...", source, ex)
             else:
                 raise ex
 
@@ -431,9 +426,11 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
 
     # 3. Trim namespaces / functions to exactly what we want
     if exclude_namespaces or include_only_namespaces:
-        file_groups = _limit_namespaces(file_groups, exclude_namespaces, include_only_namespaces)
+        file_groups = _limit_namespaces(
+            file_groups, exclude_namespaces, include_only_namespaces)
     if exclude_functions or include_only_functions:
-        file_groups = _limit_functions(file_groups, exclude_functions, include_only_functions)
+        file_groups = _limit_functions(
+            file_groups, exclude_functions, include_only_functions)
 
     # 4. Consolidate structures
     all_subgroups = flatten(g.all_groups() for g in file_groups)
@@ -448,11 +445,13 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
 
     for group in file_groups:
         for subgroup in group.all_groups():
-            subgroup.inherits = [nodes_by_subgroup_token.get(g) for g in subgroup.inherits]
+            subgroup.inherits = [nodes_by_subgroup_token.get(
+                g) for g in subgroup.inherits]
             subgroup.inherits = list(filter(None, subgroup.inherits))
             for inherit_nodes in subgroup.inherits:
                 for node in subgroup.nodes:
-                    node.variables += [Variable(n.token, n, n.line_number) for n in inherit_nodes]
+                    node.variables += [Variable(n.token, n, n.line_number)
+                                       for n in inherit_nodes]
 
     # 5. Attempt to resolve the variables (point them to a node or group)
     for node in all_nodes:
@@ -460,7 +459,8 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
 
     # Not a step. Just log what we know so far
     logging.info("Found groups %r." % [g.label() for g in all_subgroups])
-    logging.info("Found nodes %r." % sorted(n.token_with_ownership() for n in all_nodes))
+    logging.info("Found nodes %r." % sorted(
+        n.token_with_ownership() for n in all_nodes))
     logging.info("Found calls %r." % sorted(list(set(c.to_string() for c in
                                                      flatten(n.calls for n in all_nodes)))))
     logging.info("Found variables %r." % sorted(list(set(v.to_string() for v in
@@ -557,7 +557,7 @@ def _limit_namespaces(file_groups, exclude_namespaces, include_only_namespaces):
     for namespace in exclude_namespaces:
         if namespace not in removed_namespaces:
             logging.warning(f"Could not exclude namespace '{namespace}' "
-                             "because it was not found.")
+                            "because it was not found.")
     return file_groups
 
 
@@ -583,34 +583,38 @@ def _limit_functions(file_groups, exclude_functions, include_only_functions):
     for function_name in exclude_functions:
         if function_name not in removed_functions:
             logging.warning(f"Could not exclude function '{function_name}' "
-                             "because it was not found.")
+                            "because it was not found.")
     return file_groups
+
 
 def _generate_json(output_dir, all_nodes, edges):
     json_file_name = os.path.join(output_dir, 'graph.json')
     with open(json_file_name, 'w') as f:
         write_json(f, all_nodes, edges)
     logging.info("Wrote JSON output file %r with %d nodes and %d edges.",
-            json_file_name, len(all_nodes), len(edges))
+                 json_file_name, len(all_nodes), len(edges))
+
 
 def _generate_img(output_dir, all_nodes, edges, file_groups, hide_legend, no_grouping):
     if not is_installed('dot') and not is_installed('dot.exe'):
         raise AssertionError(
             "Can't generate a flowchart image because neither `dot` nor `dot.exe` was found. ")
-    
+
     # Write dot file
     dot_file_name = os.path.join(output_dir, 'graph.gv')
     with open(dot_file_name, 'w') as f:
-        write_dot(f, all_nodes, edges, file_groups, hide_legend=hide_legend, no_grouping=no_grouping)
-        
+        write_dot(f, all_nodes, edges, file_groups,
+                  hide_legend=hide_legend, no_grouping=no_grouping)
+
     # Write image file
     img_file_name = os.path.join(output_dir, 'graph.png')
     _generate_final_img(dot_file_name, 'png', img_file_name)
-    
+
     # Delete dot file
     os.remove(dot_file_name)
     logging.info("Wrote image file %r with %d nodes and %d edges.",
-             img_file_name, len(all_nodes), len(edges))
+                 img_file_name, len(all_nodes), len(edges))
+
 
 def _generate_final_img(output_file, extension, final_img_filename):
     """
@@ -621,7 +625,9 @@ def _generate_final_img(output_file, extension, final_img_filename):
     :param int num_edges:
     """
     _generate_graphviz(output_file, extension, final_img_filename)
-    logging.info("Completed flowchart! To see it, open %r.", final_img_filename)
+    logging.info("Completed flowchart! To see it, open %r.",
+                 final_img_filename)
+
 
 def _generate_graphviz(output_file, extension, final_img_filename):
     """
@@ -636,7 +642,8 @@ def _generate_graphviz(output_file, extension, final_img_filename):
     with open(final_img_filename, 'w') as f:
         try:
             subprocess.run(command, stdout=f, check=True)
-            logging.info("Graphviz finished in %.2f seconds." % (time.time() - start_time))
+            logging.info("Graphviz finished in %.2f seconds." %
+                         (time.time() - start_time))
         except subprocess.CalledProcessError:
             logging.warning("*** Graphviz returned non-zero exit code! "
                             "Try running %r for more detail ***", ' '.join(command + ['-v', '-O']))
@@ -665,7 +672,7 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
     :param subset_params SubsetParams: Object to store subset-specific params
     :param int level: logging level
     """
-    start_time = time.time() # Start timer
+    start_time = time.time()  # Start timer
 
     if not isinstance(raw_source_paths, list):
         raw_source_paths = [raw_source_paths]
@@ -701,6 +708,8 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
     if generate_json:
         _generate_json(output_dir, all_nodes, edges)
     if generate_image:
-        _generate_img(output_dir, all_nodes, edges, file_groups, hide_legend, no_grouping)
+        _generate_img(output_dir, all_nodes, edges,
+                      file_groups, hide_legend, no_grouping)
 
-    logging.info("Code2flow finished processing in %.2f seconds." % (time.time() - start_time))
+    logging.info("Code2flow finished processing in %.2f seconds." %
+                 (time.time() - start_time))
