@@ -1,6 +1,8 @@
 import abc
 import os
+from astunparse import unparse
 
+from code2flow.documentation import Documentation
 
 TRUNK_COLOR = '#966F33'
 LEAF_COLOR = '#6db33f'
@@ -262,11 +264,11 @@ class Call():
 class Node():
     @staticmethod
     def external_node(method_name : str):
-        n = Node(method_name, [], [], None)
+        n = Node(method_name, [], [], None, None)
         n.uid = f'external_{method_name.replace(".", "_")}'
         return n
     
-    def __init__(self, token, calls, variables, parent, import_tokens=None,
+    def __init__(self, token, calls, variables, parent, node, import_tokens=None,
                  line_number=None, is_constructor=False):
         self.token = token
         self.line_number = line_number
@@ -281,6 +283,7 @@ class Node():
         # Assume it is a leaf and a trunk. These are modified later
         self.is_leaf = True  # it calls nothing else
         self.is_trunk = True  # nothing calls it
+        self.content = unparse(node) if node else None
 
     def __repr__(self):
         return f"<Node token={self.token} parent={self.parent}>"

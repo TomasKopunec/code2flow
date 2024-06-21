@@ -6,6 +6,7 @@ import subprocess
 import time
 from astunparse import unparse
 
+from code2flow.docs_cache import DocsCache
 from code2flow.processor import Processor
 
 from .python import Python
@@ -25,11 +26,13 @@ LEGEND = """subgraph legend{
         </table></td></tr></table>
         >];
 }""" % (NODE_COLOR, TRUNK_COLOR, LEAF_COLOR)
-    
+
 
 def generate_improved_json(nodes, edges):
     processor = Processor(nodes, edges)
     return processor.get_json()
+
+# TODO: Remove
 
 
 def generate_json(nodes, edges):
@@ -473,17 +476,23 @@ def _limit_functions(file_groups, exclude_functions, include_only_functions):
     return file_groups
 
 
-def _generate__improved_json(output_dir, all_nodes, edges):
-    json_file_name = os.path.join(output_dir, 'graph_improved.json')
+def _write_call_graph(output_dir, content):
+    json_file_name = os.path.join(output_dir, 'call_graph.json')
     with open(json_file_name, 'w') as f:
-        content = generate_improved_json(all_nodes, edges)
         json.dump(content, f, indent=4)
-        # f.write(content)
-    logging.info("Wrote improved JSON output file %r with %d nodes and %d edges.",
-                 json_file_name, len(all_nodes), len(edges))
+    logging.info("Wrote Call Graph with %d nodes.", len(content.items()))
 
 
-def _generate_json(output_dir, all_nodes, edges):
+def _write_cache(output_dir, content):
+    json_file_name = os.path.join(output_dir, 'cache.json')
+    with open(json_file_name, 'w') as f:
+        json.dump(content, f, indent=4)
+    logging.info("Wrote Cache with %d entries.", len(content.items()))
+
+# TODO: Remove
+
+
+def _old_generate_json(output_dir, all_nodes, edges):
     json_file_name = os.path.join(output_dir, 'graph.json')
     with open(json_file_name, 'w') as f:
         content = generate_json(all_nodes, edges)
@@ -550,7 +559,7 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
               exclude_namespaces=None, exclude_functions=None,
               include_only_namespaces=None, include_only_functions=None,
               no_grouping=False, no_trimming=False, skip_parse_errors=False,
-              generate_json=True, generate_image=True, level=logging.INFO):
+              generate_json=True, generate_image=True, build_cache=True, level=logging.INFO):
     """
     Top-level function. Generate a diagram based on source code.
     Can generate either a dotfile or an image.
@@ -607,13 +616,17 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
     file_groups.sort()
     edges.sort()
 
-    _generate__improved_json(output_dir, all_nodes, edges)
-
+    call_graph = Processor(all_nodes, edges).get_json()
     if generate_json:
-        _generate_json(output_dir, all_nodes, edges)
+        _write_call_graph(output_dir, call_graph)
+
     if generate_image:
         _generate_img(output_dir, all_nodes, edges,
                       file_groups, hide_legend, no_grouping)
+
+    if build_cache:
+        cache = DocsCache.build_cache(call_graph)
+        _write_cache(output_dir, cache.to_dict())
 
     logging.info("Code2flow finished processing in %.2f seconds." %
                  (time.time() - start_time))

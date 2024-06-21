@@ -209,8 +209,7 @@ class Python(BaseLanguage):
         if parent.group_type == GROUP_TYPE.FILE:
             import_tokens = [djoin(parent.token, token)]
 
-        # TODO: Interested in calls
-        return [Node(token, calls, variables, parent, import_tokens=import_tokens,
+        return [Node(token, calls, variables, parent, node=tree, import_tokens=import_tokens,
                      line_number=line_number, is_constructor=is_constructor)]
 
     @staticmethod
@@ -227,7 +226,7 @@ class Python(BaseLanguage):
         line_number = 0
         calls = make_calls(lines)
         variables = make_local_variables(lines, parent)
-        return Node(token, calls, variables, line_number=line_number, parent=parent)
+        return Node(token, calls, variables, line_number=line_number, parent=parent, node=None)
 
     @staticmethod
     def make_class_group(tree, parent):
