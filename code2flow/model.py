@@ -1,6 +1,8 @@
 import abc
 import os
+from astunparse import unparse
 
+from code2flow.documentation import Documentation
 
 TRUNK_COLOR = '#966F33'
 LEAF_COLOR = '#6db33f'
@@ -80,13 +82,13 @@ def _resolve_str_variable(variable, file_groups):
         for group in file_group.all_groups():
             if any(ot == variable.points_to for ot in group.import_tokens):
                 return group
-    return OWNER_CONST.UNKNOWN_MODULE
+    return variable.points_to
 
 
 class BaseLanguage(abc.ABC):
     """
     Languages are individual implementations for different dynamic languages.
-    This is the superclass of Python, Javascript, PHP, and Ruby.
+    This is the superclass of Python.
     Every implementation must implement all of these methods.
     For more detail, see the individual implementations.
     Note that the 'Tree' type is generic and will be a different
@@ -102,7 +104,7 @@ class BaseLanguage(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def get_tree(filename, lang_params):
+    def get_tree(filename):
         """
         :param filename str:
         :rtype: Tree
@@ -247,8 +249,8 @@ class Call():
                     if parts[1] == node.namespace_ownership() \
                        and self.token == node.token:
                         return node
-
             return None
+        
         if self.token == variable.token:
             if isinstance(variable.points_to, Node):
                 return variable.points_to
@@ -260,7 +262,13 @@ class Call():
 
 
 class Node():
-    def __init__(self, token, calls, variables, parent, import_tokens=None,
+    @staticmethod
+    def external_node(method_name : str):
+        n = Node(method_name, [], [], None, None)
+        n.uid = f'external_{method_name.replace(".", "_")}'
+        return n
+    
+    def __init__(self, token, calls, variables, parent, node, import_tokens=None,
                  line_number=None, is_constructor=False):
         self.token = token
         self.line_number = line_number
@@ -275,19 +283,24 @@ class Node():
         # Assume it is a leaf and a trunk. These are modified later
         self.is_leaf = True  # it calls nothing else
         self.is_trunk = True  # nothing calls it
+        self.content = unparse(node) if node else None
 
     def __repr__(self):
         return f"<Node token={self.token} parent={self.parent}>"
 
     def __lt__(self, other):
-            return self.name() < other.name()
+        return self.name() < other.name()
 
     def name(self):
         """
         Names exist largely for unit tests and deterministic node sorting
         :rtype: str
         """
-        return f"{self.first_group().filename()}::{self.token_with_ownership()}"
+        group = self.first_group()
+        if not group:
+            return f'EXTERNAL::{self.token}'
+        else:
+            return f"{self.first_group().filename()}::{self.token_with_ownership()}"
 
     def first_group(self):
         """
@@ -295,6 +308,10 @@ class Node():
         :rtype: Group
         """
         parent = self.parent
+        
+        if not parent:
+            return None
+        
         while not isinstance(parent, Group):
             parent = parent.parent
         return parent
@@ -305,6 +322,9 @@ class Node():
         :rtype: Group
         """
         parent = self.parent
+        
+        if not parent:
+            return None
         while parent.parent:
             parent = parent.parent
         return parent
@@ -353,9 +373,12 @@ class Node():
         Remove this node from it's parent. This effectively deletes the node.
         :rtype: None
         """
+        group = self.first_group()
+        if not group:
+            return
         self.first_group().nodes = [n for n in self.first_group().nodes if n != self]
 
-    def get_variables(self, line_number=None):
+    def get_variables(self, line_number=None) -> list[Variable]:
         """
         Get variables in-scope on the line number.
         This includes all local variables as-well-as outer-scope variables
@@ -504,7 +527,6 @@ class Group():
         self.import_tokens = import_tokens or []
         self.inherits = inherits or []
         assert group_type in GROUP_TYPE
-
         self.uid = "cluster_" + os.urandom(4).hex()  # group doesn't work by syntax rules
 
     def __repr__(self):

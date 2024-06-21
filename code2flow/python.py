@@ -38,7 +38,7 @@ def get_call_from_func_element(func):
         return None
 
 
-def make_calls(lines):
+def make_calls(lines) -> list[Call]:
     """
     Given a list of lines, find all calls in this list.
 
@@ -146,7 +146,7 @@ class Python(BaseLanguage):
         pass
 
     @staticmethod
-    def get_tree(filename, _):
+    def get_tree(filename):
         """
         Get the entire AST for this file
 
@@ -204,15 +204,12 @@ class Python(BaseLanguage):
         line_number = tree.lineno
         calls = make_calls(tree.body)
         variables = make_local_variables(tree.body, parent)
-        is_constructor = False
-        if parent.group_type == GROUP_TYPE.CLASS and token in ['__init__', '__new__']:
-            is_constructor = True
-
+        is_constructor = parent.group_type == GROUP_TYPE.CLASS and token in ['__init__', '__new__']
         import_tokens = []
         if parent.group_type == GROUP_TYPE.FILE:
             import_tokens = [djoin(parent.token, token)]
 
-        return [Node(token, calls, variables, parent, import_tokens=import_tokens,
+        return [Node(token, calls, variables, parent, node=tree, import_tokens=import_tokens,
                      line_number=line_number, is_constructor=is_constructor)]
 
     @staticmethod
@@ -229,7 +226,7 @@ class Python(BaseLanguage):
         line_number = 0
         calls = make_calls(lines)
         variables = make_local_variables(lines, parent)
-        return Node(token, calls, variables, line_number=line_number, parent=parent)
+        return Node(token, calls, variables, line_number=line_number, parent=parent, node=None)
 
     @staticmethod
     def make_class_group(tree, parent):

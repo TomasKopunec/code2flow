@@ -1,28 +1,16 @@
-import argparse
 import collections
 import json
 import logging
 import os
 import subprocess
-import sys
 import time
 
+from code2flow.docs_cache import DocsCache
+from code2flow.processor import Processor
+
 from .python import Python
-from .javascript import Javascript
-from .ruby import Ruby
-from .php import PHP
-from .model import (TRUNK_COLOR, LEAF_COLOR, NODE_COLOR, GROUP_TYPE, OWNER_CONST,
+from .model import (TRUNK_COLOR, LEAF_COLOR, NODE_COLOR, GROUP_TYPE, OWNER_CONST, Call,
                     Edge, Group, Node, Variable, is_installed, flatten)
-
-VERSION = '2.5.1'
-
-IMAGE_EXTENSIONS = ('png', 'svg')
-TEXT_EXTENSIONS = ('dot', 'gv', 'json')
-VALID_EXTENSIONS = IMAGE_EXTENSIONS + TEXT_EXTENSIONS
-
-DESCRIPTION = "Generate flow charts from your source code. " \
-              "See the README at https://github.com/scottrogowski/code2flow."
-
 
 LEGEND = """subgraph legend{
     rank = min;
@@ -39,173 +27,11 @@ LEGEND = """subgraph legend{
 }""" % (NODE_COLOR, TRUNK_COLOR, LEAF_COLOR)
 
 
-LANGUAGES = {
-    'py': Python,
-    'js': Javascript,
-    'mjs': Javascript,
-    'rb': Ruby,
-    'php': PHP,
-}
+def generate_improved_json(nodes, edges):
+    processor = Processor(nodes, edges)
+    return processor.get_json()
 
-
-class LanguageParams():
-    """
-    Shallow structure to make storing language-specific parameters cleaner
-    """
-    def __init__(self, source_type='script', ruby_version='27'):
-        self.source_type = source_type
-        self.ruby_version = ruby_version
-
-
-class SubsetParams():
-    """
-    Shallow structure to make storing subset-specific parameters cleaner.
-    """
-    def __init__(self, target_function, upstream_depth, downstream_depth):
-        self.target_function = target_function
-        self.upstream_depth = upstream_depth
-        self.downstream_depth = downstream_depth
-
-    @staticmethod
-    def generate(target_function, upstream_depth, downstream_depth):
-        """
-        :param target_function str:
-        :param upstream_depth int:
-        :param downstream_depth int:
-        :rtype: SubsetParams|Nonetype
-        """
-        if upstream_depth and not target_function:
-            raise AssertionError("--upstream-depth requires --target-function")
-
-        if downstream_depth and not target_function:
-            raise AssertionError("--downstream-depth requires --target-function")
-
-        if not target_function:
-            return None
-
-        if not (upstream_depth or downstream_depth):
-            raise AssertionError("--target-function requires --upstream-depth or --downstream-depth")
-
-        if upstream_depth < 0:
-            raise AssertionError("--upstream-depth must be >= 0. Exclude argument for complete depth.")
-
-        if downstream_depth < 0:
-            raise AssertionError("--downstream-depth must be >= 0. Exclude argument for complete depth.")
-
-        return SubsetParams(target_function, upstream_depth, downstream_depth)
-
-
-
-def _find_target_node(subset_params, all_nodes):
-    """
-    Find the node referenced by subset_params.target_function
-    :param subset_params SubsetParams:
-    :param all_nodes list[Node]:
-    :rtype: Node
-    """
-    target_nodes = []
-    for node in all_nodes:
-        if node.token == subset_params.target_function or \
-           node.token_with_ownership() == subset_params.target_function or \
-           node.name() == subset_params.target_function:
-            target_nodes.append(node)
-    if not target_nodes:
-        raise AssertionError("Could not find node %r to build a subset." % subset_params.target_function)
-    if len(target_nodes) > 1:
-        raise AssertionError("Found multiple nodes for %r: %r. Try either a `class.func` or "
-                             "`filename::class.func`." % (subset_params.target_function, target_nodes))
-    return target_nodes[0]
-
-
-def _filter_nodes_for_subset(subset_params, all_nodes, edges):
-    """
-    Given subset_params, return a set of all nodes upstream and downstream of the target node.
-    :param subset_params SubsetParams:
-    :param all_nodes list[Node]:
-    :param edges list[Edge]:
-    :rtype: set[Node]
-    """
-    target_node = _find_target_node(subset_params, all_nodes)
-    downstream_dict = collections.defaultdict(set)
-    upstream_dict = collections.defaultdict(set)
-    for edge in edges:
-        upstream_dict[edge.node1].add(edge.node0)
-        downstream_dict[edge.node0].add(edge.node1)
-
-    include_nodes = {target_node}
-    step_nodes = {target_node}
-    next_step_nodes = set()
-
-    for _ in range(subset_params.downstream_depth):
-        for node in step_nodes:
-            next_step_nodes.update(downstream_dict[node])
-        include_nodes.update(next_step_nodes)
-        step_nodes = next_step_nodes
-        next_step_nodes = set()
-
-    step_nodes = {target_node}
-    next_step_nodes = set()
-
-    for _ in range(subset_params.upstream_depth):
-        for node in step_nodes:
-            next_step_nodes.update(upstream_dict[node])
-        include_nodes.update(next_step_nodes)
-        step_nodes = next_step_nodes
-        next_step_nodes = set()
-
-    return include_nodes
-
-
-def _filter_edges_for_subset(new_nodes, edges):
-    """
-    Given the subset of nodes, filter for edges within this subset
-    :param new_nodes set[Node]:
-    :param edges list[Edge]:
-    :rtype: list[Edge]
-    """
-    new_edges = []
-    for edge in edges:
-        if edge.node0 in new_nodes and edge.node1 in new_nodes:
-            new_edges.append(edge)
-    return new_edges
-
-
-def _filter_groups_for_subset(new_nodes, file_groups):
-    """
-    Given the subset of nodes, do housekeeping and filter out for groups within this subset
-    :param new_nodes set[Node]:
-    :param file_groups list[Group]:
-    :rtype: list[Group]
-    """
-    for file_group in file_groups:
-        for node in file_group.all_nodes():
-            if node not in new_nodes:
-                node.remove_from_parent()
-
-    new_file_groups = [g for g in file_groups if g.all_nodes()]
-
-    for file_group in new_file_groups:
-        for group in file_group.all_groups():
-            if not group.all_nodes():
-                group.remove_from_parent()
-
-    return new_file_groups
-
-
-def _filter_for_subset(subset_params, all_nodes, edges, file_groups):
-    """
-    Given subset_params, return the subset of nodes, edges, and groups
-    upstream and downstream of the target node.
-    :param subset_params SubsetParams:
-    :param all_nodes list[Node]:
-    :param edges list[Edge]:
-    :param file_groups list[Group]:
-    :rtype: list[Group], list[Node], list[Edge]
-    """
-    new_nodes = _filter_nodes_for_subset(subset_params, all_nodes, edges)
-    new_edges = _filter_edges_for_subset(new_nodes, edges)
-    new_file_groups = _filter_groups_for_subset(new_nodes, file_groups)
-    return new_file_groups, list(new_nodes), new_edges
+# TODO: Remove
 
 
 def generate_json(nodes, edges):
@@ -228,8 +54,8 @@ def generate_json(nodes, edges):
     }})
 
 
-def write_file(outfile, nodes, edges, groups, hide_legend=False,
-               no_grouping=False, as_json=False):
+def write_dot(outfile, nodes, edges, groups, hide_legend=False,
+              no_grouping=False):
     '''
     Write a dot file that can be read by graphviz
 
@@ -240,14 +66,7 @@ def write_file(outfile, nodes, edges, groups, hide_legend=False,
     :param hide_legend bool:
     :rtype: None
     '''
-
-    if as_json:
-        content = generate_json(nodes, edges)
-        outfile.write(content)
-        return
-
     splines = "polyline" if len(edges) >= 500 else "ortho"
-
     content = "digraph G {\n"
     content += "concentrate=true;\n"
     content += f'splines="{splines}";\n'
@@ -265,31 +84,12 @@ def write_file(outfile, nodes, edges, groups, hide_legend=False,
     outfile.write(content)
 
 
-def determine_language(individual_files):
-    """
-    Given a list of filepaths, determine the language from the first
-    valid extension
-
-    :param list[str] individual_files:
-    :rtype: str
-    """
-    for source, _ in individual_files:
-        suffix = source.rsplit('.', 1)[-1]
-        if suffix in LANGUAGES:
-            logging.info("Implicitly detected language as %r.", suffix)
-            return suffix
-    raise AssertionError(f"Language could not be detected from input {individual_files}. ",
-                         "Try explicitly passing the language flag.")
-
-
-def get_sources_and_language(raw_source_paths, language):
+def get_sources(raw_source_paths, language='py'):
     """
     Given a list of files and directories, return just files.
-    If we are not passed a language, determine it.
-    Filter out files that are not of that language
+    Filter out files that are not of Python language
 
     :param list[str] raw_source_paths: file or directory paths
-    :param str|None language: Input language
     :rtype: (list, str)
     """
 
@@ -303,11 +103,9 @@ def get_sources_and_language(raw_source_paths, language):
                 individual_files.append((os.path.join(root, f), False))
 
     if not individual_files:
-        raise AssertionError("No source files found from %r" % raw_source_paths)
-    logging.info("Found %d files from sources argument.", len(individual_files))
-
-    if not language:
-        language = determine_language(individual_files)
+        raise AssertionError("No source files found from %r" %
+                             raw_source_paths)
+    # logging.info("Found %d files from sources argument.", len(individual_files))
 
     sources = set()
     for source, explicity_added in individual_files:
@@ -327,10 +125,10 @@ def get_sources_and_language(raw_source_paths, language):
     for source in sources:
         logging.info("  " + source)
 
-    return sources, language
+    return sources
 
 
-def make_file_group(tree, filename, extension):
+def make_file_group(tree, filename):
     """
     Given an AST for the entire file, generate a file group complete with
     subgroups, nodes, etc.
@@ -338,14 +136,11 @@ def make_file_group(tree, filename, extension):
     :param tree ast:
     :param filename str:
     :param extension str:
-
-    :rtype: Group
     """
-    language = LANGUAGES[extension]
-
+    language = Python
     subgroup_trees, node_trees, body_trees = language.separate_namespaces(tree)
     group_type = GROUP_TYPE.FILE
-    token = os.path.split(filename)[-1].rsplit('.' + extension, 1)[0]
+    token = os.path.split(filename)[-1].rsplit('.py', 1)[0]
     line_number = 0
     display_name = 'File'
     import_tokens = language.file_import_tokens(filename)
@@ -356,14 +151,16 @@ def make_file_group(tree, filename, extension):
         for new_node in language.make_nodes(node_tree, parent=file_group):
             file_group.add_node(new_node)
 
-    file_group.add_node(language.make_root_node(body_trees, parent=file_group), is_root=True)
+    file_group.add_node(language.make_root_node(
+        body_trees, parent=file_group), is_root=True)
 
     for subgroup_tree in subgroup_trees:
-        file_group.add_subgroup(language.make_class_group(subgroup_tree, parent=file_group))
+        file_group.add_subgroup(language.make_class_group(
+            subgroup_tree, parent=file_group))
     return file_group
 
 
-def _find_link_for_call(call, node_a, all_nodes):
+def _find_link_for_call(call: Call, node_a: Node, all_nodes, external: set[str], all_group_names: set[str]):
     """
     Given a call that happened on a node (node_a), return the node
     that the call links to and the call itself if >1 node matched.
@@ -387,6 +184,18 @@ def _find_link_for_call(call, node_a, all_nodes):
             assert isinstance(var_match, Node)
             return var_match, None
 
+    # Save external calls
+    method_name = None
+    if not call.owner_token and not call.token in all_group_names:
+        resolved = _resolve_module_import_(node_a.parent, call)
+        method_name = call.token if not resolved else resolved
+        external.add(method_name)
+    else:
+        resolved = _resolve_module_import(node_a.parent, call)
+        if resolved and resolved not in all_group_names:
+            method_name = f'{resolved}.{call.token}'
+            external.add(method_name)
+
     possible_nodes = []
     if call.is_attr():
         for node in all_nodes:
@@ -394,6 +203,8 @@ def _find_link_for_call(call, node_a, all_nodes):
             # function a() {b = Obj(); b.a()}
             if call.token == node.token and node.parent != node_a.file_group():
                 possible_nodes.append(node)
+    elif method_name and method_name in external:
+        possible_nodes.append(Node.external_node(method_name))
     else:
         for node in all_nodes:
             if call.token == node.token \
@@ -410,7 +221,25 @@ def _find_link_for_call(call, node_a, all_nodes):
     return None, None
 
 
-def _find_links(node_a, all_nodes):
+def _resolve_module_import(node, call):
+    while node.group_type != GROUP_TYPE.FILE:
+        node = node.parent
+    for variable in node.get_variables():
+        if variable.token == call.owner_token:
+            return variable.points_to
+    return None
+
+
+def _resolve_module_import_(node, call):
+    while node.group_type != GROUP_TYPE.FILE:
+        node = node.parent
+    for variable in node.get_variables():
+        if variable.token == call.token:
+            return variable.points_to
+    return None
+
+
+def _find_links(node_a, all_nodes, external, all_group_names):
     """
     Iterate through the calls on node_a to find everything the node links to.
     This will return a list of tuples of nodes and calls that were ambiguous.
@@ -423,15 +252,16 @@ def _find_links(node_a, all_nodes):
 
     links = []
     for call in node_a.calls:
-        lfc = _find_link_for_call(call, node_a, all_nodes)
+        lfc = _find_link_for_call(
+            call, node_a, all_nodes, external, all_group_names)
         assert not isinstance(lfc, Group)
         links.append(lfc)
     return list(filter(None, links))
 
 
-def map_it(sources, extension, no_trimming, exclude_namespaces, exclude_functions,
+def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
            include_only_namespaces, include_only_functions,
-           skip_parse_errors, lang_params):
+           skip_parse_errors):
     '''
     Given a language implementation and a list of filenames, do these things:
     1. Read/parse source ASTs
@@ -453,40 +283,37 @@ def map_it(sources, extension, no_trimming, exclude_namespaces, exclude_function
     :param bool skip_parse_errors:
     :param LanguageParams lang_params:
 
-    :rtype: (list[Group], list[Node], list[Edge])
     '''
-
-    language = LANGUAGES[extension]
-
-    # 0. Assert dependencies
-    language.assert_dependencies()
-
-    # 1. Read/parse source ASTs
+    # 1. Read/parse source ASTs (List of (source : str, ast : Module) tuples)
     file_ast_trees = []
     for source in sources:
         try:
-            file_ast_trees.append((source, language.get_tree(source, lang_params)))
+            file_ast_trees.append((source, Python.get_tree(source)))
         except Exception as ex:
             if skip_parse_errors:
-                logging.warning("Could not parse %r. (%r) Skipping...", source, ex)
+                logging.warning(
+                    "Could not parse %r. (%r) Skipping...", source, ex)
             else:
                 raise ex
 
     # 2. Find all groups (classes/modules) and nodes (functions) (a lot happens here)
     file_groups = []
     for source, file_ast_tree in file_ast_trees:
-        file_group = make_file_group(file_ast_tree, source, extension)
+        file_group = make_file_group(file_ast_tree, source)
         file_groups.append(file_group)
 
-    # 3. Trim namespaces / functions to exactly what we want
+    # 3. Trim namespaces / functions to exactly what we want (optional)
     if exclude_namespaces or include_only_namespaces:
-        file_groups = _limit_namespaces(file_groups, exclude_namespaces, include_only_namespaces)
+        file_groups = _limit_namespaces(
+            file_groups, exclude_namespaces, include_only_namespaces)
     if exclude_functions or include_only_functions:
-        file_groups = _limit_functions(file_groups, exclude_functions, include_only_functions)
+        file_groups = _limit_functions(
+            file_groups, exclude_functions, include_only_functions)
 
     # 4. Consolidate structures
-    all_subgroups = flatten(g.all_groups() for g in file_groups)
-    all_nodes = flatten(g.all_nodes() for g in file_groups)
+    all_subgroups = flatten(g.all_groups()
+                            for g in file_groups)  # All modules / classes
+    all_nodes = flatten(g.all_nodes() for g in file_groups)  # All functions
 
     nodes_by_subgroup_token = collections.defaultdict(list)
     for subgroup in all_subgroups:
@@ -497,37 +324,48 @@ def map_it(sources, extension, no_trimming, exclude_namespaces, exclude_function
 
     for group in file_groups:
         for subgroup in group.all_groups():
-            subgroup.inherits = [nodes_by_subgroup_token.get(g) for g in subgroup.inherits]
+            subgroup.inherits = [nodes_by_subgroup_token.get(
+                g) for g in subgroup.inherits]
             subgroup.inherits = list(filter(None, subgroup.inherits))
             for inherit_nodes in subgroup.inherits:
                 for node in subgroup.nodes:
-                    node.variables += [Variable(n.token, n, n.line_number) for n in inherit_nodes]
+                    node.variables += [Variable(n.token, n, n.line_number)
+                                       for n in inherit_nodes]
 
     # 5. Attempt to resolve the variables (point them to a node or group)
     for node in all_nodes:
         node.resolve_variables(file_groups)
 
+    nodes = sorted(n.token_with_ownership() for n in all_nodes)
+    all_calls = list(set(c.to_string()
+                     for c in flatten(n.calls for n in all_nodes)))
+    variables = list(set(v.to_string()
+                     for v in flatten(n.variables for n in all_nodes)))
+
     # Not a step. Just log what we know so far
     logging.info("Found groups %r." % [g.label() for g in all_subgroups])
-    logging.info("Found nodes %r." % sorted(n.token_with_ownership() for n in all_nodes))
-    logging.info("Found calls %r." % sorted(list(set(c.to_string() for c in
-                                                     flatten(n.calls for n in all_nodes)))))
-    logging.info("Found variables %r." % sorted(list(set(v.to_string() for v in
-                                                         flatten(n.variables for n in all_nodes)))))
+    logging.info("Found nodes %r." % nodes)
+    logging.info("Found calls %r." % sorted(all_calls))
+    logging.info("Found variables %r." % sorted(variables))
 
-    # 6. Find all calls between all nodes
+    # 6. Find external calls (calls to functions that are not in the source code)
+    all_group_names = set([g.token for g in all_subgroups])
+    external = set()
+
+    # 7. Find all calls between all nodes
     bad_calls = []
     edges = []
     for node_a in list(all_nodes):
-        links = _find_links(node_a, all_nodes)
+        links = _find_links(node_a, all_nodes, external, all_group_names)
         for node_b, bad_call in links:
             if bad_call:
                 bad_calls.append(bad_call)
             if not node_b:
                 continue
             edges.append(Edge(node_a, node_b))
+    logging.info("Found external calls %r." % sorted(external))
 
-    # 7. Loudly complain about duplicate edges that were skipped
+    # 8. Loudly complain about duplicate edges that were skipped
     bad_calls_strings = set()
     for bad_call in bad_calls:
         bad_calls_strings.add(bad_call.to_string())
@@ -539,7 +377,7 @@ def map_it(sources, extension, no_trimming, exclude_namespaces, exclude_function
     if no_trimming:
         return file_groups, all_nodes, edges
 
-    # 8. Trim nodes that didn't connect to anything
+    # 9. Trim nodes that didn't connect to anything
     nodes_with_edges = set()
     for edge in edges:
         nodes_with_edges.add(edge.node0)
@@ -606,7 +444,7 @@ def _limit_namespaces(file_groups, exclude_namespaces, include_only_namespaces):
     for namespace in exclude_namespaces:
         if namespace not in removed_namespaces:
             logging.warning(f"Could not exclude namespace '{namespace}' "
-                             "because it was not found.")
+                            "because it was not found.")
     return file_groups
 
 
@@ -632,8 +470,67 @@ def _limit_functions(file_groups, exclude_functions, include_only_functions):
     for function_name in exclude_functions:
         if function_name not in removed_functions:
             logging.warning(f"Could not exclude function '{function_name}' "
-                             "because it was not found.")
+                            "because it was not found.")
     return file_groups
+
+
+def _write_call_graph(output_dir, content):
+    json_file_name = os.path.join(output_dir, 'call_graph.json')
+    with open(json_file_name, 'w') as f:
+        json.dump(content, f, indent=4)
+    logging.info("Wrote Call Graph with %d nodes.", len(content.items()))
+
+
+def _write_cache(output_dir, content):
+    json_file_name = os.path.join(output_dir, 'cache.json')
+    with open(json_file_name, 'w') as f:
+        json.dump(content, f, indent=4)
+    logging.info("Wrote Cache with %d entries.", len(content.items()))
+
+# TODO: Remove
+
+
+def _old_generate_json(output_dir, all_nodes, edges):
+    json_file_name = os.path.join(output_dir, 'graph.json')
+    with open(json_file_name, 'w') as f:
+        content = generate_json(all_nodes, edges)
+        f.write(content)
+    logging.info("Wrote JSON output file %r with %d nodes and %d edges.",
+                 json_file_name, len(all_nodes), len(edges))
+
+
+def _generate_img(output_dir, all_nodes, edges, file_groups, hide_legend, no_grouping):
+    if not is_installed('dot') and not is_installed('dot.exe'):
+        raise AssertionError(
+            "Can't generate a flowchart image because neither `dot` nor `dot.exe` was found. ")
+
+    # Write dot file
+    dot_file_name = os.path.join(output_dir, 'graph.gv')
+    with open(dot_file_name, 'w') as f:
+        write_dot(f, all_nodes, edges, file_groups,
+                  hide_legend=hide_legend, no_grouping=no_grouping)
+
+    # Write image file
+    img_file_name = os.path.join(output_dir, 'graph.png')
+    _generate_final_img(dot_file_name, 'png', img_file_name)
+
+    # Delete dot file
+    os.remove(dot_file_name)
+    logging.info("Wrote image file %r with %d nodes and %d edges.",
+                 img_file_name, len(all_nodes), len(edges))
+
+
+def _generate_final_img(output_file, extension, final_img_filename):
+    """
+    Write the graphviz file
+    :param str output_file:
+    :param str extension:
+    :param str final_img_filename:
+    :param int num_edges:
+    """
+    _generate_graphviz(output_file, extension, final_img_filename)
+    logging.info("Completed flowchart! To see it, open %r.",
+                 final_img_filename)
 
 
 def _generate_graphviz(output_file, extension, final_img_filename):
@@ -649,37 +546,24 @@ def _generate_graphviz(output_file, extension, final_img_filename):
     with open(final_img_filename, 'w') as f:
         try:
             subprocess.run(command, stdout=f, check=True)
-            logging.info("Graphviz finished in %.2f seconds." % (time.time() - start_time))
+            logging.info("Graphviz finished in %.2f seconds." %
+                         (time.time() - start_time))
         except subprocess.CalledProcessError:
             logging.warning("*** Graphviz returned non-zero exit code! "
                             "Try running %r for more detail ***", ' '.join(command + ['-v', '-O']))
 
 
-def _generate_final_img(output_file, extension, final_img_filename, num_edges):
-    """
-    Write the graphviz file
-    :param str output_file:
-    :param str extension:
-    :param str final_img_filename:
-    :param int num_edges:
-    """
-    _generate_graphviz(output_file, extension, final_img_filename)
-    logging.info("Completed your flowchart! To see it, open %r.",
-                 final_img_filename)
-
-
-def code2flow(raw_source_paths, output_file, language=None, hide_legend=True,
+def code2flow(raw_source_paths, output_dir, hide_legend=True,
               exclude_namespaces=None, exclude_functions=None,
               include_only_namespaces=None, include_only_functions=None,
               no_grouping=False, no_trimming=False, skip_parse_errors=False,
-              lang_params=None, subset_params=None, level=logging.INFO):
+              generate_json=True, generate_image=True, build_cache=True, level=logging.INFO):
     """
     Top-level function. Generate a diagram based on source code.
     Can generate either a dotfile or an image.
 
     :param list[str] raw_source_paths: file or directory paths
-    :param str|file output_file: path to the output file. SVG/PNG will generate an image.
-    :param str language: input language extension
+    :param str| output_dir: path to the output dir.
     :param bool hide_legend: Omit the legend from the output
     :param list exclude_namespaces: List of namespaces to exclude
     :param list exclude_functions: List of functions to exclude
@@ -689,16 +573,12 @@ def code2flow(raw_source_paths, output_file, language=None, hide_legend=True,
     :param bool no_trimming: Don't trim orphaned functions / namespaces
     :param bool skip_parse_errors: If a language parser fails to parse a file, skip it
     :param lang_params LanguageParams: Object to store lang-specific params
-    :param subset_params SubsetParams: Object to store subset-specific params
     :param int level: logging level
-    :rtype: None
     """
-    start_time = time.time()
+    start_time = time.time()  # Start timer
 
     if not isinstance(raw_source_paths, list):
         raw_source_paths = [raw_source_paths]
-    lang_params = lang_params or LanguageParams()
-
     exclude_namespaces = exclude_namespaces or []
     assert isinstance(exclude_namespaces, list)
     exclude_functions = exclude_functions or []
@@ -708,168 +588,43 @@ def code2flow(raw_source_paths, output_file, language=None, hide_legend=True,
     include_only_functions = include_only_functions or []
     assert isinstance(include_only_functions, list)
 
+    # Configure logging
     logging.basicConfig(format="Code2Flow: %(message)s", level=level)
 
-    sources, language = get_sources_and_language(raw_source_paths, language)
+    sources = get_sources(raw_source_paths)
 
-    output_ext = None
-    if isinstance(output_file, str):
-        assert '.' in output_file, "Output filename must end in one of: %r." % set(VALID_EXTENSIONS)
-        output_ext = output_file.rsplit('.', 1)[1] or ''
-        assert output_ext in VALID_EXTENSIONS, "Output filename must end in one of: %r." % \
-                                               set(VALID_EXTENSIONS)
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    final_img_filename = None
-    if output_ext and output_ext in IMAGE_EXTENSIONS:
-        if not is_installed('dot') and not is_installed('dot.exe'):
-            raise AssertionError(
-                "Can't generate a flowchart image because neither `dot` nor "
-                "`dot.exe` was found. Either install graphviz (see the README) "
-                "or, if you just want an intermediate text file, set your --output "
-                "file to use a supported text extension: %r" % set(TEXT_EXTENSIONS))
-        final_img_filename = output_file
-        output_file, extension = output_file.rsplit('.', 1)
-        output_file += '.gv'
-
-    file_groups, all_nodes, edges = map_it(sources, language, no_trimming,
+    # Primary processing
+    file_groups, all_nodes, edges = map_it(sources, no_trimming,
                                            exclude_namespaces, exclude_functions,
                                            include_only_namespaces, include_only_functions,
-                                           skip_parse_errors, lang_params)
+                                           skip_parse_errors)
 
-    if subset_params:
-        logging.info("Filtering into subset...")
-        file_groups, all_nodes, edges = _filter_for_subset(subset_params, all_nodes, edges, file_groups)
+    # Remove duplicate nodes (external calls, etc.)
+    unique = {}
+    for node in all_nodes:
+        unique[node.uid] = node
+    all_nodes = list(unique.values())
 
-    file_groups.sort()
+    # Sort for deterministic output
     all_nodes.sort()
+    file_groups.sort()
     edges.sort()
 
-    logging.info("Generating output file...")
+    call_graph = Processor(all_nodes, edges).get_json()
+    if generate_json:
+        _write_call_graph(output_dir, call_graph)
 
-    if isinstance(output_file, str):
-        with open(output_file, 'w') as fh:
-            as_json = output_ext == 'json'
-            write_file(fh, nodes=all_nodes, edges=edges,
-                       groups=file_groups, hide_legend=hide_legend,
-                       no_grouping=no_grouping, as_json=as_json)
-    else:
-        write_file(output_file, nodes=all_nodes, edges=edges,
-                   groups=file_groups, hide_legend=hide_legend,
-                   no_grouping=no_grouping)
+    if generate_image:
+        _generate_img(output_dir, all_nodes, edges,
+                      file_groups, hide_legend, no_grouping)
 
-    logging.info("Wrote output file %r with %d nodes and %d edges.",
-                 output_file, len(all_nodes), len(edges))
-    if not output_ext == 'json':
-        logging.info("For better machine readability, you can also try outputting in a json format.")
-    logging.info("Code2flow finished processing in %.2f seconds." % (time.time() - start_time))
+    if build_cache:
+        cache = DocsCache.build_cache(call_graph)
+        _write_cache(output_dir, cache.to_dict())
 
-    # translate to an image if that was requested
-    if final_img_filename:
-        _generate_final_img(output_file, extension, final_img_filename, len(edges))
-
-
-def main(sys_argv=None):
-    """
-    CLI interface. Sys_argv is a parameter for the sake of unittest coverage.
-    :param sys_argv list:
-    :rtype: None
-    """
-    parser = argparse.ArgumentParser(
-        description=DESCRIPTION,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument(
-        'sources', metavar='sources', nargs='+',
-        help='source code file/directory paths.')
-    parser.add_argument(
-        '--output', '-o', default='out.png',
-        help=f'output file path. Supported types are {VALID_EXTENSIONS}.')
-    parser.add_argument(
-        '--language', choices=['py', 'js', 'rb', 'php'],
-        help='process this language and ignore all other files.'
-             'If omitted, use the suffix of the first source file.')
-    parser.add_argument(
-        '--target-function',
-        help='output a subset of the graph centered on this function. '
-             'Valid formats include `func`, `class.func`, and `file::class.func`. '
-             'Requires --upstream-depth and/or --downstream-depth. ')
-    parser.add_argument(
-        '--upstream-depth', type=int, default=0,
-        help='include n nodes upstream of --target-function.')
-    parser.add_argument(
-        '--downstream-depth', type=int, default=0,
-        help='include n nodes downstream of --target-function.')
-    parser.add_argument(
-        '--exclude-functions',
-        help='exclude functions from the output. Comma delimited.')
-    parser.add_argument(
-        '--exclude-namespaces',
-        help='exclude namespaces (Classes, modules, etc) from the output. Comma delimited.')
-    parser.add_argument(
-        '--include-only-functions',
-        help='include only functions in the output. Comma delimited.')
-    parser.add_argument(
-        '--include-only-namespaces',
-        help='include only namespaces (Classes, modules, etc) in the output. Comma delimited.')
-    parser.add_argument(
-        '--no-grouping', action='store_true',
-        help='instead of grouping functions into namespaces, let functions float.')
-    parser.add_argument(
-        '--no-trimming', action='store_true',
-        help='show all functions/namespaces whether or not they connect to anything.')
-    parser.add_argument(
-        '--hide-legend', action='store_true',
-        help='by default, Code2flow generates a small legend. This flag hides it.')
-    parser.add_argument(
-        '--skip-parse-errors', action='store_true',
-        help='skip files that the language parser fails on.')
-    parser.add_argument(
-        '--source-type', choices=['script', 'module'], default='script',
-        help='js only. Parse the source as scripts (commonJS) or modules (es6)')
-    parser.add_argument(
-        '--ruby-version', default='27',
-        help='ruby only. Which ruby version to parse? This is passed directly into ruby-parse. '
-             'Use numbers like 25, 27, or 31.')
-    parser.add_argument(
-        '--quiet', '-q', action='store_true',
-        help='suppress most logging')
-    parser.add_argument(
-        '--verbose', '-v', action='store_true',
-        help='add more logging')
-    parser.add_argument(
-        '--version', action='version', version='%(prog)s ' + VERSION)
-
-    sys_argv = sys_argv or sys.argv[1:]
-    args = parser.parse_args(sys_argv)
-    level = logging.INFO
-    if args.verbose and args.quiet:
-        raise AssertionError("Passed both --verbose and --quiet flags")
-    if args.verbose:
-        level = logging.DEBUG
-    if args.quiet:
-        level = logging.WARNING
-
-    exclude_namespaces = list(filter(None, (args.exclude_namespaces or "").split(',')))
-    exclude_functions = list(filter(None, (args.exclude_functions or "").split(',')))
-    include_only_namespaces = list(filter(None, (args.include_only_namespaces or "").split(',')))
-    include_only_functions = list(filter(None, (args.include_only_functions or "").split(',')))
-
-    lang_params = LanguageParams(args.source_type, args.ruby_version)
-    subset_params = SubsetParams.generate(args.target_function, args.upstream_depth,
-                                          args.downstream_depth)
-
-    code2flow(
-        raw_source_paths=args.sources,
-        output_file=args.output,
-        language=args.language,
-        hide_legend=args.hide_legend,
-        exclude_namespaces=exclude_namespaces,
-        exclude_functions=exclude_functions,
-        include_only_namespaces=include_only_namespaces,
-        include_only_functions=include_only_functions,
-        no_grouping=args.no_grouping,
-        no_trimming=args.no_trimming,
-        skip_parse_errors=args.skip_parse_errors,
-        lang_params=lang_params,
-        subset_params=subset_params,
-        level=level,
-    )
+    logging.info("Code2flow finished processing in %.2f seconds." %
+                 (time.time() - start_time))
