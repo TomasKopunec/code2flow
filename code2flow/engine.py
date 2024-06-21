@@ -349,8 +349,7 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
     logging.info("Found calls %r." % sorted(all_calls))
     logging.info("Found variables %r." % sorted(variables))
 
-    # 6. Find external calls
-    # All modules / classes
+    # 6. Find external calls (calls to functions that are not in the source code)
     all_group_names = set([g.token for g in all_subgroups])
     external = set()
 
@@ -367,7 +366,7 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
             edges.append(Edge(node_a, node_b))
     logging.info("Found external calls %r." % sorted(external))
 
-    # 7. Loudly complain about duplicate edges that were skipped
+    # 8. Loudly complain about duplicate edges that were skipped
     bad_calls_strings = set()
     for bad_call in bad_calls:
         bad_calls_strings.add(bad_call.to_string())
@@ -379,7 +378,7 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
     if no_trimming:
         return file_groups, all_nodes, edges
 
-    # 8. Trim nodes that didn't connect to anything
+    # 9. Trim nodes that didn't connect to anything
     nodes_with_edges = set()
     for edge in edges:
         nodes_with_edges.add(edge.node0)
