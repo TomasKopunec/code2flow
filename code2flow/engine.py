@@ -25,147 +25,7 @@ LEGEND = """subgraph legend{
         </table></td></tr></table>
         >];
 }""" % (NODE_COLOR, TRUNK_COLOR, LEAF_COLOR)
-
-
-class SubsetParams():
-    """
-    Shallow structure to make storing subset-specific parameters cleaner.
-    """
-
-    def __init__(self, target_function, upstream_depth, downstream_depth):
-        self.target_function = target_function
-        self.upstream_depth = upstream_depth
-        self.downstream_depth = downstream_depth
-
-    @staticmethod
-    def generate(target_function, upstream_depth, downstream_depth):
-        """
-        :param target_function str:
-        :param upstream_depth int:
-        :param downstream_depth int:
-        :rtype: SubsetParams|Nonetype
-        """
-        if upstream_depth and not target_function:
-            raise AssertionError("--upstream-depth requires --target-function")
-
-        if downstream_depth and not target_function:
-            raise AssertionError(
-                "--downstream-depth requires --target-function")
-
-        if not target_function:
-            return None
-
-        if not (upstream_depth or downstream_depth):
-            raise AssertionError(
-                "--target-function requires --upstream-depth or --downstream-depth")
-
-        if upstream_depth < 0:
-            raise AssertionError(
-                "--upstream-depth must be >= 0. Exclude argument for complete depth.")
-
-        if downstream_depth < 0:
-            raise AssertionError(
-                "--downstream-depth must be >= 0. Exclude argument for complete depth.")
-
-        return SubsetParams(target_function, upstream_depth, downstream_depth)
-
-
-def _find_target_node(subset_params, all_nodes):
-    """
-    Find the node referenced by subset_params.target_function
-    :param subset_params SubsetParams:
-    :param all_nodes list[Node]:
-    :rtype: Node
-    """
-    target_nodes = []
-    for node in all_nodes:
-        if node.token == subset_params.target_function or \
-           node.token_with_ownership() == subset_params.target_function or \
-           node.name() == subset_params.target_function:
-            target_nodes.append(node)
-    if not target_nodes:
-        raise AssertionError(
-            "Could not find node %r to build a subset." % subset_params.target_function)
-    if len(target_nodes) > 1:
-        raise AssertionError("Found multiple nodes for %r: %r. Try either a `class.func` or "
-                             "`filename::class.func`." % (subset_params.target_function, target_nodes))
-    return target_nodes[0]
-
-
-def _filter_nodes_for_subset(subset_params, all_nodes, edges):
-    """
-    Given subset_params, return a set of all nodes upstream and downstream of the target node.
-    :param subset_params SubsetParams:
-    :param all_nodes list[Node]:
-    :param edges list[Edge]:
-    :rtype: set[Node]
-    """
-    target_node = _find_target_node(subset_params, all_nodes)
-    downstream_dict = collections.defaultdict(set)
-    upstream_dict = collections.defaultdict(set)
-    for edge in edges:
-        upstream_dict[edge.node1].add(edge.node0)
-        downstream_dict[edge.node0].add(edge.node1)
-
-    include_nodes = {target_node}
-    step_nodes = {target_node}
-    next_step_nodes = set()
-
-    for _ in range(subset_params.downstream_depth):
-        for node in step_nodes:
-            next_step_nodes.update(downstream_dict[node])
-        include_nodes.update(next_step_nodes)
-        step_nodes = next_step_nodes
-        next_step_nodes = set()
-
-    step_nodes = {target_node}
-    next_step_nodes = set()
-
-    for _ in range(subset_params.upstream_depth):
-        for node in step_nodes:
-            next_step_nodes.update(upstream_dict[node])
-        include_nodes.update(next_step_nodes)
-        step_nodes = next_step_nodes
-        next_step_nodes = set()
-
-    return include_nodes
-
-
-def _filter_edges_for_subset(new_nodes, edges):
-    """
-    Given the subset of nodes, filter for edges within this subset
-    :param new_nodes set[Node]:
-    :param edges list[Edge]:
-    :rtype: list[Edge]
-    """
-    new_edges = []
-    for edge in edges:
-        if edge.node0 in new_nodes and edge.node1 in new_nodes:
-            new_edges.append(edge)
-    return new_edges
-
-
-def _filter_groups_for_subset(new_nodes, file_groups):
-    """
-    Given the subset of nodes, do housekeeping and filter out for groups within this subset
-    :param new_nodes set[Node]:
-    :param file_groups list[Group]:
-    :rtype: list[Group]
-    """
-    for file_group in file_groups:
-        for node in file_group.all_nodes():
-            if node not in new_nodes:
-                node.remove_from_parent()
-
-    new_file_groups = [g for g in file_groups if g.all_nodes()]
-
-    for file_group in new_file_groups:
-        for group in file_group.all_groups():
-            if not group.all_nodes():
-                group.remove_from_parent()
-
-    return new_file_groups
-
+    
 
 def generate_improved_json(nodes, edges):
     processor = Processor(nodes, edges)
@@ -343,7 +203,6 @@ def _find_link_for_call(call: Call, node_a: Node, all_nodes, external: set[str],
                 possible_nodes.append(node)
     elif method_name and method_name in external:
         possible_nodes.append(Node.external_node(method_name))
-        # possible_nodes.append(Node(method_name, [], [], None, None, None))
     else:
         for node in all_nodes:
             if call.token == node.token \
@@ -707,7 +566,6 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
     :param bool no_trimming: Don't trim orphaned functions / namespaces
     :param bool skip_parse_errors: If a language parser fails to parse a file, skip it
     :param lang_params LanguageParams: Object to store lang-specific params
-    :param subset_params SubsetParams: Object to store subset-specific params
     :param int level: logging level
     """
     start_time = time.time()  # Start timer

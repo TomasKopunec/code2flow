@@ -1,4 +1,3 @@
-
 from code2flow.model import Node
 
 
@@ -23,25 +22,25 @@ class Processor():
             caller_id = edge.to_dict()['source']
             callee_id = edge.to_dict()['target']
             directed = edge.to_dict()['directed']
-            
+
             if not directed:
                 raise Exception('Only directed edges are supported')
-            
+
             caller = self.calls[caller_id]
             callee = self.calls[callee_id]
-            
+
             # We could add whole FunctionAll object
             # caller.add_callee(callee)
-            
+
             # But we only want the name
             caller.add_callee(callee.name)
-            
+
     def get_json(self):
         calls = {}
         for call in self.calls.values():
             calls[call.name] = call.to_dict()
         return calls
-        
+
 
 class FunctionCall():
     def __init__(self, node: Node):
@@ -61,11 +60,11 @@ class FunctionCall():
 
     def to_dict(self):
         return {
-            'uid' : self.uid,
-            'name' : self.name,
+            'uid': self.uid,
+            'name': self.name,
             # 'namespace' : self.namespace,
             # 'first_group' : self.first_group,
             # 'file_group' : self.file_group,
             # 'token_with_ownership' : self.token_with_ownership,
-            'callees' : self.callees
+            'callees': self.callees
         }
