@@ -2,8 +2,6 @@ import abc
 import os
 from astunparse import unparse
 
-from code2flow.documentation import Documentation
-
 TRUNK_COLOR = '#966F33'
 LEAF_COLOR = '#6db33f'
 EDGE_COLORS = ["#000000", "#E69F00", "#56B4E9", "#009E73",
