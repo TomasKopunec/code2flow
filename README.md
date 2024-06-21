@@ -97,7 +97,7 @@ Examples can be found below.
 ```
 
 ### Call Graph (PNG)
-![graph](output/graph.png)
+![graph](graph.png)
 
 ### Cache 
 ```json
