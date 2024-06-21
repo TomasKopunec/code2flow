@@ -515,7 +515,7 @@ class Group():
     Groups represent namespaces (classes and modules/files)
     """
     def __init__(self, token, group_type, display_type, import_tokens=None,
-                 line_number=None, parent=None, inherits=None):
+                 line_number=None, parent=None, inherits=None, file_name=None):
         self.token = token
         self.line_number = line_number
         self.nodes = []
@@ -528,6 +528,7 @@ class Group():
         self.inherits = inherits or []
         assert group_type in GROUP_TYPE
         self.uid = "cluster_" + os.urandom(4).hex()  # group doesn't work by syntax rules
+        self.file_name = file_name
 
     def __repr__(self):
         return f"<Group token={self.token} type={self.display_type}>"

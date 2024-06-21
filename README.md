@@ -46,32 +46,36 @@ Examples can be found below.
         "uid": "external_print",
         "name": "EXTERNAL::print",
         "content": null,
-        "callees": []
+        "callees": [],
+        "file_name": "EXTERNAL"
     },
     "data_processor::DataProcessor.check_emails": {
-        "uid": "node_8302933f",
+        "uid": "node_076d9b36",
         "name": "data_processor::DataProcessor.check_emails",
         "content": "...",
         "callees": [
             "utils::validate_email"
-        ]
+        ],
+        "file_name": "./projects/users\\data_processor.py"
     },
     "data_processor::DataProcessor.process_data": {
-        "uid": "node_300c8d6d",
+        "uid": "node_50ccd283",
         "name": "data_processor::DataProcessor.process_data",
         "content": "...",
-        "callees": []
+        "callees": [],
+        "file_name": "./projects/users\\data_processor.py"
     },
     "main::(global)": {
-        "uid": "node_b5519bc4",
+        "uid": "node_b68cd1f7",
         "name": "main::(global)",
         "content": null,
         "callees": [
             "main::main"
-        ]
+        ],
+        "file_name": "./projects/users\\main.py"
     },
     "main::main": {
-        "uid": "node_26daa468",
+        "uid": "node_b512e015",
         "name": "main::main",
         "content": "...",
         "callees": [
@@ -79,19 +83,22 @@ Examples can be found below.
             "EXTERNAL::print",
             "data_processor::DataProcessor.process_data",
             "user::User.__init__"
-        ]
+        ],
+        "file_name": "./projects/users\\main.py"
     },
     "user::User.__init__": {
-        "uid": "node_3ef24613",
+        "uid": "node_28067a42",
         "name": "user::User.__init__",
         "content": "...",
-        "callees": []
+        "callees": [],
+        "file_name": "./projects/users\\user.py"
     },
     "utils::validate_email": {
-        "uid": "node_195e73b7",
+        "uid": "node_dbb19f36",
         "name": "utils::validate_email",
         "content": "...",
-        "callees": []
+        "callees": [],
+        "file_name": "./projects/users\\utils.py"
     }
 }
 ```

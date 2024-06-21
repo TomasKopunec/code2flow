@@ -49,9 +49,18 @@ class FunctionCall():
         self.ownership = node.token_with_ownership()
         self.content = node.content
         self.callees = []
+        self.file_name = self.__resolve_filename(node)
 
     def add_callee(self, callee):
         self.callees.append(callee)
+
+    def __resolve_filename(self, node):
+        if node.parent is None:
+            return 'EXTERNAL'
+        parent = node.parent
+        while parent.parent is not None and parent.group_type != 'FILE':
+            parent = parent.parent
+        return parent.file_name
 
     def to_dict(self):
         return {
@@ -60,4 +69,5 @@ class FunctionCall():
             # Could be inferred from the name (b::B.methodB1 -> file b, class B, method methodB1)
             'content': self.content,
             'callees': self.callees,
+            'file_name': self.file_name,
         }

@@ -11,7 +11,7 @@ def main():
     
     processor = DataProcessor()
     data = ["apple", "banana", "cherry"]
-    processed_data = processor.process_data(data) # TODO: processor.process_data(data) considered external
+    processed_data = processor.process_data(data)
     print(f"Processed Data: {processed_data}")
 
 if __name__ == "__main__":

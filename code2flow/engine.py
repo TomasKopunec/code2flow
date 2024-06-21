@@ -27,33 +27,6 @@ LEGEND = """subgraph legend{
 }""" % (NODE_COLOR, TRUNK_COLOR, LEAF_COLOR)
 
 
-def generate_improved_json(nodes, edges):
-    processor = Processor(nodes, edges)
-    return processor.get_json()
-
-# TODO: Remove
-
-
-def generate_json(nodes, edges):
-    '''
-    Generate a json string from nodes and edges
-    See https://github.com/jsongraph/json-graph-specification
-
-    :param nodes list[Node]: functions
-    :param edges list[Edge]: function calls
-    :rtype: str
-    '''
-    nodes = [n.to_dict() for n in nodes]
-    nodes = {n['uid']: n for n in nodes}
-    edges = [e.to_dict() for e in edges]
-
-    return json.dumps({"graph": {
-        "directed": True,
-        "nodes": nodes,
-        "edges": edges,
-    }})
-
-
 def write_dot(outfile, nodes, edges, groups, hide_legend=False,
               no_grouping=False):
     '''
@@ -146,7 +119,7 @@ def make_file_group(tree, filename):
     import_tokens = language.file_import_tokens(filename)
 
     file_group = Group(token, group_type, display_name, import_tokens,
-                       line_number, parent=None)
+                       line_number, parent=None, file_name=filename)
     for node_tree in node_trees:
         for new_node in language.make_nodes(node_tree, parent=file_group):
             file_group.add_node(new_node)
@@ -486,17 +459,6 @@ def _write_cache(output_dir, content):
     with open(json_file_name, 'w') as f:
         json.dump(content, f, indent=4)
     logging.info("Wrote Cache with %d entries.", len(content.items()))
-
-# TODO: Remove
-
-
-def _old_generate_json(output_dir, all_nodes, edges):
-    json_file_name = os.path.join(output_dir, 'graph.json')
-    with open(json_file_name, 'w') as f:
-        content = generate_json(all_nodes, edges)
-        f.write(content)
-    logging.info("Wrote JSON output file %r with %d nodes and %d edges.",
-                 json_file_name, len(all_nodes), len(edges))
 
 
 def _generate_img(output_dir, all_nodes, edges, file_groups, hide_legend, no_grouping):
