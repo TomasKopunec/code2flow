@@ -34,7 +34,7 @@ code2flow(
 ```
 This will generate the following files for the `users` project in the `output` directory:
 - The call graph in JSON format `output/call_graph.json`
-- The call graph in PNG format `output/graph.png`, as well as the underlying DOT file `output/graph.gv`
+- The call graph in PNG format `output/graph.png`
 - The documentation cache in JSON format `output/cache.json` that can be filled with AutoGen documentation.
 
 Examples can be found below.

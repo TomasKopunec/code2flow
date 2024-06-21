@@ -4,7 +4,6 @@ import logging
 import os
 import subprocess
 import time
-from astunparse import unparse
 
 from code2flow.docs_cache import DocsCache
 from code2flow.processor import Processor
@@ -516,7 +515,7 @@ def _generate_img(output_dir, all_nodes, edges, file_groups, hide_legend, no_gro
     _generate_final_img(dot_file_name, 'png', img_file_name)
 
     # Delete dot file
-    # os.remove(dot_file_name)
+    os.remove(dot_file_name)
     logging.info("Wrote image file %r with %d nodes and %d edges.",
                  img_file_name, len(all_nodes), len(edges))
 
