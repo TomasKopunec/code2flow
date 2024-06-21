@@ -6,6 +6,8 @@ import subprocess
 import time
 from astunparse import unparse
 
+from code2flow.processor import Processor
+
 from .python import Python
 from .model import (TRUNK_COLOR, LEAF_COLOR, NODE_COLOR, GROUP_TYPE, OWNER_CONST, Call,
                     Edge, Group, Node, Variable, is_installed, flatten)
@@ -165,6 +167,11 @@ def _filter_groups_for_subset(new_nodes, file_groups):
     return new_file_groups
 
 
+def generate_improved_json(nodes, edges):
+    processor = Processor(nodes, edges)
+    return processor.get_json()
+
+
 def generate_json(nodes, edges):
     '''
     Generate a json string from nodes and edges
@@ -183,12 +190,6 @@ def generate_json(nodes, edges):
         "nodes": nodes,
         "edges": edges,
     }})
-
-
-def write_json(outfile, nodes, edges):
-    content = generate_json(nodes, edges)
-    outfile.write(content)
-    return
 
 
 def write_dot(outfile, nodes, edges, groups, hide_legend=False,
@@ -297,7 +298,7 @@ def make_file_group(tree, filename):
     return file_group
 
 
-def _find_link_for_call(call : Call, node_a : Node, all_nodes, external : set[str], all_group_names : set[str]):
+def _find_link_for_call(call: Call, node_a: Node, all_nodes, external: set[str], all_group_names: set[str]):
     """
     Given a call that happened on a node (node_a), return the node
     that the call links to and the call itself if >1 node matched.
@@ -351,12 +352,13 @@ def _find_link_for_call(call : Call, node_a : Node, all_nodes, external : set[st
                 possible_nodes.append(node)
             elif call.token == node.parent.token and node.is_constructor:
                 possible_nodes.append(node)
-    
+
     if len(possible_nodes) == 1:
         return possible_nodes[0], None
     if len(possible_nodes) > 1:
         return None, call
     return None, None
+
 
 def _resolve_module_import(node, call):
     while node.group_type != GROUP_TYPE.FILE:
@@ -366,6 +368,7 @@ def _resolve_module_import(node, call):
             return variable.points_to
     return None
 
+
 def _resolve_module_import_(node, call):
     while node.group_type != GROUP_TYPE.FILE:
         node = node.parent
@@ -373,6 +376,7 @@ def _resolve_module_import_(node, call):
         if variable.token == call.token:
             return variable.points_to
     return None
+
 
 def _find_links(node_a, all_nodes, external, all_group_names):
     """
@@ -387,7 +391,8 @@ def _find_links(node_a, all_nodes, external, all_group_names):
 
     links = []
     for call in node_a.calls:
-        lfc = _find_link_for_call(call, node_a, all_nodes, external, all_group_names)
+        lfc = _find_link_for_call(
+            call, node_a, all_nodes, external, all_group_names)
         assert not isinstance(lfc, Group)
         links.append(lfc)
     return list(filter(None, links))
@@ -445,8 +450,9 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
             file_groups, exclude_functions, include_only_functions)
 
     # 4. Consolidate structures
-    all_subgroups = flatten(g.all_groups() for g in file_groups) # All modules / classes
-    all_nodes = flatten(g.all_nodes() for g in file_groups) # All functions
+    all_subgroups = flatten(g.all_groups()
+                            for g in file_groups)  # All modules / classes
+    all_nodes = flatten(g.all_nodes() for g in file_groups)  # All functions
 
     nodes_by_subgroup_token = collections.defaultdict(list)
     for subgroup in all_subgroups:
@@ -470,8 +476,10 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
         node.resolve_variables(file_groups)
 
     nodes = sorted(n.token_with_ownership() for n in all_nodes)
-    all_calls = list(set(c.to_string() for c in flatten(n.calls for n in all_nodes)))
-    variables = list(set(v.to_string() for v in flatten(n.variables for n in all_nodes)))
+    all_calls = list(set(c.to_string()
+                     for c in flatten(n.calls for n in all_nodes)))
+    variables = list(set(v.to_string()
+                     for v in flatten(n.variables for n in all_nodes)))
 
     # Not a step. Just log what we know so far
     logging.info("Found groups %r." % [g.label() for g in all_subgroups])
@@ -480,7 +488,8 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
     logging.info("Found variables %r." % sorted(variables))
 
     # 6. Find external calls
-    all_group_names = set([g.token for g in all_subgroups]) # All modules / classes
+    # All modules / classes
+    all_group_names = set([g.token for g in all_subgroups])
     external = set()
 
     # 7. Find all calls between all nodes
@@ -605,10 +614,21 @@ def _limit_functions(file_groups, exclude_functions, include_only_functions):
     return file_groups
 
 
+def _generate__improved_json(output_dir, all_nodes, edges):
+    json_file_name = os.path.join(output_dir, 'graph_improved.json')
+    with open(json_file_name, 'w') as f:
+        content = generate_improved_json(all_nodes, edges)
+        json.dump(content, f, indent=4)
+        # f.write(content)
+    logging.info("Wrote improved JSON output file %r with %d nodes and %d edges.",
+                 json_file_name, len(all_nodes), len(edges))
+
+
 def _generate_json(output_dir, all_nodes, edges):
     json_file_name = os.path.join(output_dir, 'graph.json')
     with open(json_file_name, 'w') as f:
-        write_json(f, all_nodes, edges)
+        content = generate_json(all_nodes, edges)
+        f.write(content)
     logging.info("Wrote JSON output file %r with %d nodes and %d edges.",
                  json_file_name, len(all_nodes), len(edges))
 
@@ -718,18 +738,19 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
                                            include_only_namespaces, include_only_functions,
                                            skip_parse_errors)
 
-    # Sort for deterministic output
+    # Remove duplicate nodes (external calls, etc.)
     unique = {}
     for node in all_nodes:
         unique[node.uid] = node
     all_nodes = list(unique.values())
+
+    # Sort for deterministic output
     all_nodes.sort()
-    
     file_groups.sort()
     edges.sort()
 
-    # Make all_nodes that start with _external unique
-    
+    _generate__improved_json(output_dir, all_nodes, edges)
+
     if generate_json:
         _generate_json(output_dir, all_nodes, edges)
     if generate_image:
