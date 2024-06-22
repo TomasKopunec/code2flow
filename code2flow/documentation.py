@@ -1,9 +1,9 @@
 class Documentation():
     @staticmethod
     def get_empty():
-        return None
+        return Documentation()
     
-    def __init__(self, version=0, generated_on='', generated_docs=''):
+    def __init__(self, version=None, generated_on=None, generated_docs=None):
         self.version = version
         self.generated_on = generated_on
         self.generated_docs = generated_docs
