@@ -5,9 +5,8 @@ import os
 import subprocess
 import time
 
-from code2flow.docs_cache import DocsCache
-from code2flow.processor import Processor
-
+from .docs_cache import DocsCache
+from .processor import Processor
 from .python import Python
 from .model import (TRUNK_COLOR, LEAF_COLOR, NODE_COLOR, GROUP_TYPE, OWNER_CONST, Call,
                     Edge, Group, Node, Variable, is_installed, flatten)

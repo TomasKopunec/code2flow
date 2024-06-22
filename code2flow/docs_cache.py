@@ -1,4 +1,4 @@
-from code2flow.documentation import Documentation
+from .documentation import Documentation
 
 
 class DocsCache():

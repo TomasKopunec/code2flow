@@ -1,7 +1,7 @@
 
 import json
 
-from code2flow.engine import code2flow
+from .engine import code2flow
 
 
 def generate_graph(root_folder, output_dir):

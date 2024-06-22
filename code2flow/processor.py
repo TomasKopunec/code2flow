@@ -1,4 +1,4 @@
-from code2flow.model import Node
+from .model import Node
 
 
 class Processor():
