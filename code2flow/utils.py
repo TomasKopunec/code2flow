@@ -53,6 +53,17 @@ def get_file_to_functions(graph) -> dict:
 
 
 def explore_call_graph(graph) -> dict:
+    """
+    Converts call graph to a function to list of callees mapping of the form:
+    {
+        'func1': {'func2': {'func3': {}}}
+        'func2': {'func3': {}, 'func4': {
+            'func5': {'func6': {}, 'func7': {}},
+            'func8': {'func9': {}}
+        }}' 
+        ...
+    }
+    """
     visited = {}
     for method in graph:
         if 'EXTERNAL' not in method:  # Skip external methods
