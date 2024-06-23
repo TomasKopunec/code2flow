@@ -1,4 +1,5 @@
 
+from collections import deque
 import json
 
 from .engine import code2flow
@@ -49,6 +50,32 @@ def get_file_to_functions(graph) -> dict:
         items = file_to_calls.get(file_name, [])
         file_to_calls[file_name] = items + [method_name]
     return file_to_calls
+
+
+def explore_call_graph(graph) -> dict:
+    visited = {}
+    for method in graph:
+        if 'EXTERNAL' not in method:  # Skip external methods
+            visited.update(__explore_call_graph(
+                graph, method, visited, depth=5))
+    return visited
+
+
+def __explore_call_graph(graph, start_method, visited, depth=10) -> dict:
+    result = {}
+    queue = deque([(start_method, 0, result)])
+
+    while queue:
+        curr, curr_depth, curr_dict = queue.popleft()
+        if curr_depth < depth:
+            # Check if we already visited this method, if so use the cached result
+            if curr in visited:
+                curr_dict[curr] = visited[curr]
+            else:
+                curr_dict[curr] = {}
+                for callee in graph.get(curr, {}).get('callees', []):
+                    queue.append((callee, curr_depth + 1, curr_dict[curr]))
+    return result
 
 
 def load_json(file_path):
