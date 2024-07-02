@@ -5,7 +5,6 @@ import os
 import subprocess
 import time
 
-from .docs_cache import DocsCache
 from .processor import Processor
 from .python import Python
 from .model import (TRUNK_COLOR, LEAF_COLOR, NODE_COLOR, GROUP_TYPE, OWNER_CONST, Call,
@@ -518,7 +517,7 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
               exclude_namespaces=None, exclude_functions=None,
               include_only_namespaces=None, include_only_functions=None,
               no_grouping=False, no_trimming=False, skip_parse_errors=False,
-              generate_json=True, generate_image=True, build_cache=True, level=logging.INFO):
+              generate_json=True, generate_image=True, level=logging.INFO):
     """
     Top-level function. Generate a diagram based on source code.
     Can generate either a dotfile or an image.
@@ -582,10 +581,6 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
     if generate_image:
         _generate_img(output_dir, all_nodes, edges,
                       file_groups, hide_legend, no_grouping)
-
-    if build_cache:
-        cache = DocsCache.build_cache(call_graph)
-        _write_cache(output_dir, cache.to_dict())
 
     logging.info("Code2flow finished processing in %.2f seconds." %
                  (time.time() - start_time))

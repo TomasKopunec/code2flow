@@ -14,8 +14,7 @@ def generate_graph(root_folder, output_dir):
         raw_source_paths=root_folder,
         output_dir=output_dir,
         generate_json=True,
-        generate_image=True,
-        build_cache=True
+        generate_image=True
     )
 
 
@@ -52,7 +51,7 @@ def get_file_to_functions(graph) -> dict:
     return file_to_calls
 
 
-def explore_call_graph(graph) -> dict:
+def explore_call_graph(graph, depth=5) -> dict:
     """
     Converts call graph to a function to list of callees mapping of the form:
     {
@@ -64,15 +63,16 @@ def explore_call_graph(graph) -> dict:
         ...
     }
     """
+    print(f'Exploring call graph with depth up to {depth}')
     visited = {}
     for method in graph:
         if 'EXTERNAL' not in method:  # Skip external methods
             visited.update(__explore_call_graph(
-                graph, method, visited, depth=5))
+                graph, method, visited, depth))
     return visited
 
 
-def __explore_call_graph(graph, start_method, visited, depth=10) -> dict:
+def __explore_call_graph(graph, start_method, visited, depth) -> dict:
     result = {}
     queue = deque([(start_method, 0, result)])
 
