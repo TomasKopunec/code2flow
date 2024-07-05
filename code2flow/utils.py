@@ -20,14 +20,14 @@ def generate_graph(root_folder, output_dir):
 
 def get_cache(output_dir) -> dict:
     try:
-        return load_json(f'{output_dir}/cache.json')
+        return __load_json(f'{output_dir}/cache.json')
     except FileNotFoundError:
         raise Exception('Cache not found. Please run generate_graph first.')
 
 
 def get_call_graph(output_dir) -> dict:
     try:
-        return load_json(f'{output_dir}/call_graph.json')
+        return __load_json(f'{output_dir}/call_graph.json')
     except FileNotFoundError:
         raise Exception(
             'Call graph not found. Please run generate_graph first.')
@@ -89,11 +89,6 @@ def __explore_call_graph(graph, start_method, visited, depth) -> dict:
     return result
 
 
-def load_json(file_path):
+def __load_json(file_path):
     with open(file_path, 'r') as f:
         return json.load(f)
-
-
-def write_json(file_path, data):
-    with open(file_path, 'w') as f:
-        json.dump(data, f, indent=4)

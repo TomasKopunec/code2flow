@@ -11,4 +11,4 @@ graph = get_call_graph(output_dir)
 file_to_calls = get_file_to_functions(graph)
 
 bfs_result = explore_call_graph(graph=graph, depth=5)
-write_json(f'{output_dir}/bfs_result.json', bfs_result)
+# write_json(f'{output_dir}/bfs_result.json', bfs_result)
