@@ -1,3 +1,4 @@
+import os
 from .model import Node
 
 
@@ -60,7 +61,7 @@ class FunctionCall():
         parent = node.parent
         while parent.parent is not None and parent.group_type != 'FILE':
             parent = parent.parent
-        return parent.file_name
+        return os.path.abspath(parent.file_name)
 
     def to_dict(self):
         return {

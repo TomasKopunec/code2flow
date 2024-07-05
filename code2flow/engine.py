@@ -78,14 +78,15 @@ def get_sources(raw_source_paths, language='py'):
                              raw_source_paths)
     # logging.info("Found %d files from sources argument.", len(individual_files))
 
+    skipped = 0
     sources = set()
     for source, explicity_added in individual_files:
         if explicity_added or source.endswith('.' + language):
             sources.add(source)
         else:
-            logging.info("Skipping %r which is not a %s file. "
-                         "If this is incorrect, include it explicitly.",
-                         source, language)
+            skipped += 1
+    
+    logging.info("Skipped %d non-Python files.", skipped)            
 
     if not sources:
         raise AssertionError("Could not find any source files given {raw_source_paths} "
@@ -93,8 +94,8 @@ def get_sources(raw_source_paths, language='py'):
 
     sources = sorted(list(sources))
     logging.info("Processing %d source file(s)." % (len(sources)))
-    for source in sources:
-        logging.info("  " + source)
+    # for source in sources:
+    #     logging.info("  " + source)
 
     return sources
 
@@ -314,10 +315,10 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
                      for v in flatten(n.variables for n in all_nodes)))
 
     # Not a step. Just log what we know so far
-    logging.info("Found groups %r." % [g.label() for g in all_subgroups])
-    logging.info("Found nodes %r." % nodes)
-    logging.info("Found calls %r." % sorted(all_calls))
-    logging.info("Found variables %r." % sorted(variables))
+    # logging.info("Found groups %r." % [g.label() for g in all_subgroups])
+    # logging.info("Found nodes %r." % nodes)
+    # logging.info("Found calls %r." % sorted(all_calls))
+    # logging.info("Found variables %r." % sorted(variables))
 
     # 6. Find external calls (calls to functions that are not in the source code)
     all_group_names = set([g.token for g in all_subgroups])
@@ -334,7 +335,7 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
             if not node_b:
                 continue
             edges.append(Edge(node_a, node_b))
-    logging.info("Found external calls %r." % sorted(external))
+    # logging.info("Found external calls %r" % sorted(external))
 
     # 8. Loudly complain about duplicate edges that were skipped
     bad_calls_strings = set()
@@ -449,14 +450,14 @@ def _write_call_graph(output_dir, content):
     json_file_name = os.path.join(output_dir, 'call_graph.json')
     with open(json_file_name, 'w') as f:
         json.dump(content, f, indent=4)
-    logging.info("Wrote Call Graph with %d nodes.", len(content.items()))
+    logging.info("Call Graph generated (%d nodes)", len(content.items()))
 
 
 def _write_cache(output_dir, content):
     json_file_name = os.path.join(output_dir, 'cache.json')
     with open(json_file_name, 'w') as f:
         json.dump(content, f, indent=4)
-    logging.info("Wrote Cache with %d entries.", len(content.items()))
+    logging.info("Cache generated (%d entries)", len(content.items()))
 
 
 def _generate_img(output_dir, all_nodes, edges, file_groups, hide_legend, no_grouping):
@@ -476,8 +477,7 @@ def _generate_img(output_dir, all_nodes, edges, file_groups, hide_legend, no_gro
 
     # Delete dot file
     os.remove(dot_file_name)
-    logging.info("Wrote image file %r with %d nodes and %d edges.",
-                 img_file_name, len(all_nodes), len(edges))
+    logging.info("Image file stored in: %r", img_file_name)
 
 
 def _generate_final_img(output_file, extension, final_img_filename):
@@ -489,8 +489,8 @@ def _generate_final_img(output_file, extension, final_img_filename):
     :param int num_edges:
     """
     _generate_graphviz(output_file, extension, final_img_filename)
-    logging.info("Completed flowchart! To see it, open %r.",
-                 final_img_filename)
+    # logging.info("Completed flowchart! To see it, open %r.",
+    #              final_img_filename)
 
 
 def _generate_graphviz(output_file, extension, final_img_filename):
@@ -501,13 +501,13 @@ def _generate_graphviz(output_file, extension, final_img_filename):
     :param str final_img_filename:
     """
     start_time = time.time()
-    logging.info("Running graphviz to make the image...")
+    # logging.info("Running graphviz to make the image...")
     command = ["dot", "-T" + extension, output_file]
     with open(final_img_filename, 'w') as f:
         try:
             subprocess.run(command, stdout=f, check=True)
-            logging.info("Graphviz finished in %.2f seconds." %
-                         (time.time() - start_time))
+            # logging.info("Chart created in %.2f seconds." %
+            #              (time.time() - start_time))
         except subprocess.CalledProcessError:
             logging.warning("*** Graphviz returned non-zero exit code! "
                             "Try running %r for more detail ***", ' '.join(command + ['-v', '-O']))
@@ -582,5 +582,5 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
         _generate_img(output_dir, all_nodes, edges,
                       file_groups, hide_legend, no_grouping)
 
-    logging.info("Code2flow finished processing in %.2f seconds." %
+    logging.info("Code2flow processing completed in %.2f seconds." %
                  (time.time() - start_time))

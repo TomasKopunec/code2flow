@@ -63,7 +63,7 @@ def explore_call_graph(graph, depth=5) -> dict:
         ...
     }
     """
-    print(f'Exploring call graph with depth up to {depth}')
+    print(f'Exploring the Call Graph with depth up to {depth}')
     visited = {}
     for method in graph:
         if 'EXTERNAL' not in method:  # Skip external methods
