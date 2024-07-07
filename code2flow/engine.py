@@ -132,7 +132,7 @@ def make_file_group(tree, filename):
     return file_group
 
 
-def _find_link_for_call(call: Call, node_a: Node, all_nodes, external: set[str], all_group_names: set[str]):
+def _find_link_for_call(call: Call, node_a: Node, all_nodes, external: set[str], all_group_names: set[str], paths : set[str]):
     """
     Given a call that happened on a node (node_a), return the node
     that the call links to and the call itself if >1 node matched.
@@ -161,7 +161,20 @@ def _find_link_for_call(call: Call, node_a: Node, all_nodes, external: set[str],
     if not call.owner_token and not call.token in all_group_names:
         resolved = _resolve_module_import_(node_a.parent, call)
         method_name = call.token if not resolved else resolved
-        external.add(method_name)
+        
+        # Attempt to check if internal
+        is_external = True
+        normalized = method_name.replace(f'.{call.token}', '')
+        if normalized in paths:
+            functions = paths[normalized]
+            for f in functions:
+                if f'{normalized}.{call.token}' == method_name:
+                    is_external = False
+                    break
+            
+        if is_external:
+            external.add(method_name)
+        
     else:
         resolved = _resolve_module_import(node_a.parent, call)
         if resolved and resolved not in all_group_names:
@@ -210,8 +223,7 @@ def _resolve_module_import_(node, call):
             return variable.points_to
     return None
 
-
-def _find_links(node_a, all_nodes, external, all_group_names):
+def _find_links(node_a, all_nodes, external, all_group_names, paths):
     """
     Iterate through the calls on node_a to find everything the node links to.
     This will return a list of tuples of nodes and calls that were ambiguous.
@@ -225,13 +237,13 @@ def _find_links(node_a, all_nodes, external, all_group_names):
     links = []
     for call in node_a.calls:
         lfc = _find_link_for_call(
-            call, node_a, all_nodes, external, all_group_names)
+            call, node_a, all_nodes, external, all_group_names, paths)
         assert not isinstance(lfc, Group)
         links.append(lfc)
     return list(filter(None, links))
 
 
-def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
+def map_it(root_path, sources, no_trimming, exclude_namespaces, exclude_functions,
            include_only_namespaces, include_only_functions,
            skip_parse_errors):
     '''
@@ -325,17 +337,18 @@ def map_it(sources, no_trimming, exclude_namespaces, exclude_functions,
     external = set()
 
     # 7. Find all calls between all nodes
+    paths = __get_paths(root_path, all_nodes)    
     bad_calls = []
     edges = []
     for node_a in list(all_nodes):
-        links = _find_links(node_a, all_nodes, external, all_group_names)
+        links = _find_links(node_a, all_nodes, external, all_group_names, paths)
         for node_b, bad_call in links:
             if bad_call:
                 bad_calls.append(bad_call)
             if not node_b:
                 continue
             edges.append(Edge(node_a, node_b))
-    # logging.info("Found external calls %r" % sorted(external))
+    logging.info("Found external calls %r" % sorted(external))
 
     # 8. Loudly complain about duplicate edges that were skipped
     bad_calls_strings = set()
@@ -512,6 +525,27 @@ def _generate_graphviz(output_file, extension, final_img_filename):
             logging.warning("*** Graphviz returned non-zero exit code! "
                             "Try running %r for more detail ***", ' '.join(command + ['-v', '-O']))
 
+def __get_paths(root_path, all_nodes):
+    # Turn 'C:\\Coding\\simple-users\\api\\samples\\a.py' into api.samples.a
+    paths = {}
+    parents = [node.parent for node in all_nodes if node.parent is not None]
+    for p in parents:
+        if p.group_type == GROUP_TYPE.FILE and p.parent is None:
+            path = p.file_name
+            path = path.replace(root_path, '')
+            path = path.replace('.py', '')
+            split = path.split(os.sep)[1:]
+            path = '.'.join(split)
+            paths[path] = __get_all_calls(p)
+    return paths
+
+def __get_all_calls(node):
+    calls = set()
+    # Get all calls from all nodes and subgroups
+    for n in node.all_nodes():
+        if n.is_leaf and not n.is_constructor and not n.token == '(global)':
+            calls.add(n.token)
+    return calls
 
 def code2flow(raw_source_paths, output_dir, hide_legend=True,
               exclude_namespaces=None, exclude_functions=None,
@@ -558,7 +592,7 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
         os.makedirs(output_dir)
 
     # Primary processing
-    file_groups, all_nodes, edges = map_it(sources, no_trimming,
+    file_groups, all_nodes, edges = map_it(raw_source_paths[0], sources, no_trimming,
                                            exclude_namespaces, exclude_functions,
                                            include_only_namespaces, include_only_functions,
                                            skip_parse_errors)
