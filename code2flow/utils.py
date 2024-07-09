@@ -5,7 +5,7 @@ import json
 from .engine import code2flow
 
 
-def generate_graph(root_folder, output_dir):
+def generate_graph(root_folder, output_dir, generate_image=True, generate_json=True):
     """
     Writes call graph to output_dir/call_graph.json
     Writes image to output_dir/call_graph.png
@@ -13,8 +13,8 @@ def generate_graph(root_folder, output_dir):
     code2flow(
         raw_source_paths=root_folder,
         output_dir=output_dir,
-        generate_json=True,
-        generate_image=True
+        generate_json=generate_json,
+        generate_image=generate_image
     )
 
 
