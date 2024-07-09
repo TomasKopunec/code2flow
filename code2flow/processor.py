@@ -1,4 +1,6 @@
 import os
+
+from ordered_set import OrderedSet
 from .model import Node
 
 
@@ -6,19 +8,21 @@ class Processor():
     def __init__(self, nodes, edges):
         self.nodes = nodes
         self.edges = edges
-        self.calls = self.__get_calls()
-        self.__build_edges()
+        self.calls = self._get_calls()
+        self._build_edges()
+        self.json = self._to_json()
+        self._resolve_callers()
 
     def __str__(self) -> str:
         return f'{len(self.calls)} calls'
 
-    def __get_calls(self):
+    def _get_calls(self):
         calls = {}
         for node in self.nodes:
             calls[node.uid] = FunctionCall(node)
         return calls
 
-    def __build_edges(self):
+    def _build_edges(self):
         for edge in self.edges:
             caller_id = edge.to_dict()['source']
             callee_id = edge.to_dict()['target']
@@ -36,11 +40,23 @@ class Processor():
             # But we only want the name
             caller.add_callee(callee.name)
 
-    def get_json(self):
+    def _resolve_callers(self):
+        for uid, call in self.json.items():
+            for callee in call['callees']:
+                self.json[callee]['callers'].append(uid)
+        
+        # Remove duplicates
+        for uid, call in self.json.items():
+            call['callers'] = list(OrderedSet(call['callers']))
+
+    def _to_json(self):
         calls = {}
         for call in self.calls.values():
             calls[call.name] = call.to_dict()
         return calls
+    
+    def get(self):
+        return self.json
 
 
 class FunctionCall():
@@ -49,13 +65,17 @@ class FunctionCall():
         self.name = node.name()
         self.ownership = node.token_with_ownership()
         self.content = node.content
+        self.callers = []
         self.callees = []
-        self.file_name = self.__resolve_filename(node)
+        self.file_name = self._resolve_filename(node)
+
+    def __str__(self):
+        return f'{self.name}'
 
     def add_callee(self, callee):
         self.callees.append(callee)
 
-    def __resolve_filename(self, node):
+    def _resolve_filename(self, node):
         if node.parent is None:
             return 'EXTERNAL'
         parent = node.parent
@@ -67,8 +87,8 @@ class FunctionCall():
         return {
             'uid': self.uid,
             'name': self.name,
-            # Could be inferred from the name (b::B.methodB1 -> file b, class B, method methodB1)
             'content': self.content,
+            'callers': self.callers,
             'callees': self.callees,
             'file_name': self.file_name,
         }

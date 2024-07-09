@@ -5,6 +5,8 @@ import os
 import subprocess
 import time
 
+from ordered_set import OrderedSet
+
 from .processor import Processor
 from .python import Python
 from .model import (TRUNK_COLOR, LEAF_COLOR, NODE_COLOR, GROUP_TYPE, OWNER_CONST, Call,
@@ -79,7 +81,7 @@ def get_sources(raw_source_paths, language='py'):
     # logging.info("Found %d files from sources argument.", len(individual_files))
 
     skipped = 0
-    sources = set()
+    sources = OrderedSet()
     for source, explicity_added in individual_files:
         if explicity_added or source.endswith('.' + language):
             sources.add(source)
@@ -168,7 +170,7 @@ def _find_link_for_call(call: Call, node_a: Node, all_nodes, external: set[str],
         if normalized in paths:
             functions = paths[normalized]
             for f in functions:
-                if f'{normalized}.{call.token}' == method_name:
+                if f'{normalized}.{call.token}' == f'{normalized}.{f}':
                     is_external = False
                     break
             
@@ -182,14 +184,14 @@ def _find_link_for_call(call: Call, node_a: Node, all_nodes, external: set[str],
             external.add(method_name)
 
     possible_nodes = []
-    if call.is_attr():
+    if method_name and method_name in external:
+        possible_nodes.append(Node.external_node(method_name))
+    elif call.is_attr():
         for node in all_nodes:
             # checking node.parent != node_a.file_group() prevents self linkage in cases like
             # function a() {b = Obj(); b.a()}
             if call.token == node.token and node.parent != node_a.file_group():
                 possible_nodes.append(node)
-    elif method_name and method_name in external:
-        possible_nodes.append(Node.external_node(method_name))
     else:
         for node in all_nodes:
             if call.token == node.token \
@@ -243,9 +245,7 @@ def _find_links(node_a, all_nodes, external, all_group_names, paths):
     return list(filter(None, links))
 
 
-def map_it(root_path, sources, no_trimming, exclude_namespaces, exclude_functions,
-           include_only_namespaces, include_only_functions,
-           skip_parse_errors):
+def map_it(root_path, sources, no_trimming, skip_parse_errors):
     '''
     Given a language implementation and a list of filenames, do these things:
     1. Read/parse source ASTs
@@ -286,15 +286,7 @@ def map_it(root_path, sources, no_trimming, exclude_namespaces, exclude_function
         file_group = make_file_group(file_ast_tree, source)
         file_groups.append(file_group)
 
-    # 3. Trim namespaces / functions to exactly what we want (optional)
-    if exclude_namespaces or include_only_namespaces:
-        file_groups = _limit_namespaces(
-            file_groups, exclude_namespaces, include_only_namespaces)
-    if exclude_functions or include_only_functions:
-        file_groups = _limit_functions(
-            file_groups, exclude_functions, include_only_functions)
-
-    # 4. Consolidate structures
+    # 3. Consolidate structures
     all_subgroups = flatten(g.all_groups()
                             for g in file_groups)  # All modules / classes
     all_nodes = flatten(g.all_nodes() for g in file_groups)  # All functions
@@ -316,7 +308,7 @@ def map_it(root_path, sources, no_trimming, exclude_namespaces, exclude_function
                     node.variables += [Variable(n.token, n, n.line_number)
                                        for n in inherit_nodes]
 
-    # 5. Attempt to resolve the variables (point them to a node or group)
+    # 4. Attempt to resolve the variables (point them to a node or group)
     for node in all_nodes:
         node.resolve_variables(file_groups)
 
@@ -332,11 +324,11 @@ def map_it(root_path, sources, no_trimming, exclude_namespaces, exclude_function
     # logging.info("Found calls %r." % sorted(all_calls))
     # logging.info("Found variables %r." % sorted(variables))
 
-    # 6. Find external calls (calls to functions that are not in the source code)
-    all_group_names = set([g.token for g in all_subgroups])
-    external = set()
+    # 5. Find external calls (calls to functions that are not in the source code)
+    all_group_names = OrderedSet([g.token for g in all_subgroups])
+    external = OrderedSet()
 
-    # 7. Find all calls between all nodes
+    # 6. Find all calls between all nodes
     paths = __get_paths(root_path, all_nodes)    
     bad_calls = []
     edges = []
@@ -348,13 +340,13 @@ def map_it(root_path, sources, no_trimming, exclude_namespaces, exclude_function
             if not node_b:
                 continue
             edges.append(Edge(node_a, node_b))
-    logging.info("Found external calls %r" % sorted(external))
+    # logging.info("Found external calls %r" % sorted(external))
 
-    # 8. Loudly complain about duplicate edges that were skipped
-    bad_calls_strings = set()
+    # 7. Loudly complain about duplicate edges that were skipped
+    bad_calls_strings = OrderedSet()
     for bad_call in bad_calls:
         bad_calls_strings.add(bad_call.to_string())
-    bad_calls_strings = list(sorted(list(bad_calls_strings)))
+    bad_calls_strings = list(bad_calls_strings)
     if bad_calls_strings:
         logging.info("Skipped processing these calls because the algorithm "
                      "linked them to multiple function definitions: %r." % bad_calls_strings)
@@ -362,8 +354,8 @@ def map_it(root_path, sources, no_trimming, exclude_namespaces, exclude_function
     if no_trimming:
         return file_groups, all_nodes, edges
 
-    # 9. Trim nodes that didn't connect to anything
-    nodes_with_edges = set()
+    # 8. Trim nodes that didn't connect to anything
+    nodes_with_edges = OrderedSet()
     for edge in edges:
         nodes_with_edges.add(edge.node0)
         nodes_with_edges.add(edge.node1)
@@ -390,88 +382,12 @@ def map_it(root_path, sources, no_trimming, exclude_namespaces, exclude_function
 
     return file_groups, all_nodes, edges
 
-
-def _limit_namespaces(file_groups, exclude_namespaces, include_only_namespaces):
-    """
-    Exclude namespaces (classes/modules) which match any of the exclude_namespaces
-
-    :param list[Group] file_groups:
-    :param list exclude_namespaces:
-    :param list include_only_namespaces:
-    :rtype: list[Group]
-    """
-
-    removed_namespaces = set()
-
-    for group in list(file_groups):
-        if group.token in exclude_namespaces:
-            for node in group.all_nodes():
-                node.remove_from_parent()
-            removed_namespaces.add(group.token)
-        if include_only_namespaces and group.token not in include_only_namespaces:
-            for node in group.nodes:
-                node.remove_from_parent()
-            removed_namespaces.add(group.token)
-
-        for subgroup in group.all_groups():
-            print(subgroup, subgroup.all_parents())
-            if subgroup.token in exclude_namespaces:
-                for node in subgroup.all_nodes():
-                    node.remove_from_parent()
-                removed_namespaces.add(subgroup.token)
-            if include_only_namespaces and \
-               subgroup.token not in include_only_namespaces and \
-               all(p.token not in include_only_namespaces for p in subgroup.all_parents()):
-                for node in subgroup.nodes:
-                    node.remove_from_parent()
-                removed_namespaces.add(group.token)
-
-    for namespace in exclude_namespaces:
-        if namespace not in removed_namespaces:
-            logging.warning(f"Could not exclude namespace '{namespace}' "
-                            "because it was not found.")
-    return file_groups
-
-
-def _limit_functions(file_groups, exclude_functions, include_only_functions):
-    """
-    Exclude nodes (functions) which match any of the exclude_functions
-
-    :param list[Group] file_groups:
-    :param list exclude_functions:
-    :param list include_only_functions:
-    :rtype: list[Group]
-    """
-
-    removed_functions = set()
-
-    for group in list(file_groups):
-        for node in group.all_nodes():
-            if node.token in exclude_functions or \
-               (include_only_functions and node.token not in include_only_functions):
-                node.remove_from_parent()
-                removed_functions.add(node.token)
-
-    for function_name in exclude_functions:
-        if function_name not in removed_functions:
-            logging.warning(f"Could not exclude function '{function_name}' "
-                            "because it was not found.")
-    return file_groups
-
-
 def _write_call_graph(output_dir, content):
     json_file_name = os.path.join(output_dir, 'call_graph.json')
     with open(json_file_name, 'w') as f:
         json.dump(content, f, indent=4)
-    logging.info("Call Graph generated (%d nodes)", len(content.items()))
-
-
-def _write_cache(output_dir, content):
-    json_file_name = os.path.join(output_dir, 'cache.json')
-    with open(json_file_name, 'w') as f:
-        json.dump(content, f, indent=4)
-    logging.info("Cache generated (%d entries)", len(content.items()))
-
+    logging.info("Call Graph with %d nodes stored in: %r",
+                 len(content), json_file_name)
 
 def _generate_img(output_dir, all_nodes, edges, file_groups, hide_legend, no_grouping):
     if not is_installed('dot') and not is_installed('dot.exe'):
@@ -540,7 +456,7 @@ def __get_paths(root_path, all_nodes):
     return paths
 
 def __get_all_calls(node):
-    calls = set()
+    calls = OrderedSet()
     # Get all calls from all nodes and subgroups
     for n in node.all_nodes():
         if n.is_leaf and not n.is_constructor and not n.token == '(global)':
@@ -592,10 +508,8 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
         os.makedirs(output_dir)
 
     # Primary processing
-    file_groups, all_nodes, edges = map_it(raw_source_paths[0], sources, no_trimming,
-                                           exclude_namespaces, exclude_functions,
-                                           include_only_namespaces, include_only_functions,
-                                           skip_parse_errors)
+    file_groups, all_nodes, edges = map_it(raw_source_paths[0], sources, 
+                                           no_trimming, skip_parse_errors)
 
     # Remove duplicate nodes (external calls, etc.)
     unique = {}
@@ -608,13 +522,13 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
     file_groups.sort()
     edges.sort()
 
-    call_graph = Processor(all_nodes, edges).get_json()
+    processor = Processor(all_nodes, edges)
     if generate_json:
-        _write_call_graph(output_dir, call_graph)
+        _write_call_graph(output_dir, processor.get())
 
     if generate_image:
         _generate_img(output_dir, all_nodes, edges,
                       file_groups, hide_legend, no_grouping)
 
-    logging.info("Code2flow processing completed in %.2f seconds." %
+    logging.info("Completed in %.2f seconds." %
                  (time.time() - start_time))

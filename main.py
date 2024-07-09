@@ -1,6 +1,6 @@
 from code2flow.utils import *
 
-root_folder = './projects/simple'
+root_folder = '../simple-users'
 output_dir = 'output'
 
 # 1. Generate graph
