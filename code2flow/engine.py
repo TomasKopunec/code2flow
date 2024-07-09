@@ -463,11 +463,11 @@ def __get_all_calls(node):
             calls.add(n.token)
     return calls
 
-def code2flow(raw_source_paths, output_dir, hide_legend=True,
+def code2flow(raw_source_paths, output_dir, hide_legend=False,
               exclude_namespaces=None, exclude_functions=None,
               include_only_namespaces=None, include_only_functions=None,
               no_grouping=False, no_trimming=False, skip_parse_errors=False,
-              generate_json=True, generate_image=True, level=logging.INFO):
+              generate_json=True, generate_image=True, level=logging.INFO, silent=False):
     """
     Top-level function. Generate a diagram based on source code.
     Can generate either a dotfile or an image.
@@ -500,6 +500,9 @@ def code2flow(raw_source_paths, output_dir, hide_legend=True,
 
     # Configure logging
     logging.basicConfig(format="Code2Flow: %(message)s", level=level)
+    
+    if silent:
+        logging.disable(logging.CRITICAL + 1)
 
     sources = get_sources(raw_source_paths)
 

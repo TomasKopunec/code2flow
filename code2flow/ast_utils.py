@@ -108,7 +108,7 @@ def _get_all_functions_from_content(path, content):
 
 
 def _get_all_functions_from_file(file_path) -> dict:
-    generate_graph(file_path, './tmp', generate_image=False)
+    generate_graph(file_path, './tmp', generate_image=False, silent=True)
     graph = get_call_graph('./tmp')
 
     # Only pick the functions from graph that are in functions
