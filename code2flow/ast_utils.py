@@ -20,13 +20,34 @@ class FunctionChange:
         self.similarity = similarity
 
     def __str__(self):
-        return f'{self.name} ({self.type.name}={self.similarity})'
+        match self.type:
+            case FunctionChangeType.EQUAL:
+                return f'Function {self.name} has no changes.'
+            case FunctionChangeType.UPDATED:
+                percent = round(self.similarity * 100, 2)
+                return f'Function {self.name} has been updated with similarity of {percent}%.'
+            case FunctionChangeType.REMOVED:
+                return f'Function {self.name} has been removed.'
+            case FunctionChangeType.ADDED:
+                return f'Function {self.name} has been added.'
+            case FunctionChangeType.RENAMED:
+                percent = round(self.similarity * 100, 2)
+                return f'Function {self.name} has been renamed with similarity of {percent}%'
+            case _:
+                raise ValueError(f'Invalid FunctionChangeType: {self.type}')
 
     def __repr__(self):
-        return self.__str__()
+        return f'{self.name}: ({self.type.name}={self.similarity})'
+
+def filter_changes(changes: list[FunctionChange]):
+    """
+    Filter changes, so that we only retrieve relevant parent dependencies.
+    Only include the UPDATED functions.
+    """
+    return [change.name for change in changes if change.type == FunctionChangeType.UPDATED]
 
 
-def get_content_similarity(file_path, old_file, new_file) -> list[FunctionChange]:
+def get_function_changes(file_path, old_file, new_file) -> list[FunctionChange]:
     """
     Given two Python function dictionaries (name -> content), this function calculates (using difflib)
     the similarity between the functions in the files.
@@ -96,10 +117,10 @@ def _get_all_functions_from_file(file_path) -> dict:
         name = entry['name']
         if 'EXTERNAL' not in name:
             map[name] = entry['content']
-    print(map)
     shutil.rmtree('./tmp')
     return map
 
 
 def _get_similarity(a, b):
+    assert isinstance(a, str) and isinstance(b, str)    
     return difflib.SequenceMatcher(None, a, b).ratio()

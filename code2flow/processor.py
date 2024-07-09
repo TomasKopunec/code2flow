@@ -64,7 +64,7 @@ class FunctionCall():
         self.uid = node.uid
         self.name = node.name()
         self.ownership = node.token_with_ownership()
-        self.content = node.content
+        self.content = node.content if node.content else ''
         self.callers = []
         self.callees = []
         self.file_name = self._resolve_filename(node)

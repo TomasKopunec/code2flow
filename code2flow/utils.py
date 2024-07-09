@@ -1,5 +1,5 @@
 
-from collections import deque
+from collections import defaultdict, deque
 import json
 
 from .engine import code2flow
@@ -71,7 +71,7 @@ def explore_call_graph(graph, depth=5) -> dict:
                 graph, method, visited, depth))
     return visited
 
-def get_parent_dependencies(graph, matched_functions) -> list[tuple]:
+def get_parent_dependencies(graph, matched_functions) -> dict:
     """
     Returns a list of tuples containing the parent dependencies of the matched functions.
     [
@@ -80,7 +80,7 @@ def get_parent_dependencies(graph, matched_functions) -> list[tuple]:
         ...
     ]
     """
-    parent_dependencies = []
+    parent_dependencies = defaultdict(list)
     visited = set()
     queue = deque(matched_functions)
     
@@ -92,13 +92,13 @@ def get_parent_dependencies(graph, matched_functions) -> list[tuple]:
                 
             file_name = graph_entry['file_name']
             if file_name != 'EXTERNAL':
-                parent_dependencies.append((current_function, graph_entry['file_name']))
-                
+                parent_dependencies[file_name].append(current_function)
+
             # Add callers (parents) to the queue
             for caller in graph_entry['callers']:
                 if caller not in visited:
                     queue.append(caller)
-    return parent_dependencies
+    return dict(parent_dependencies)
 
 def __explore_call_graph(graph, start_method, visited, depth) -> dict:
     result = {}
