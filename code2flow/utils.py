@@ -72,7 +72,7 @@ def explore_call_graph(graph, depth=5) -> dict:
                 graph, method, visited, depth))
     return visited
 
-def get_parent_dependencies(graph, matched_functions) -> dict:
+def get_parent_dependencies(graph, matched_functions, file_path) -> dict:
     """
     Returns a list of tuples containing the parent dependencies of the matched functions.
     [
@@ -92,7 +92,7 @@ def get_parent_dependencies(graph, matched_functions) -> dict:
             graph_entry = graph.get(current_function)
                 
             file_name = graph_entry['file_name']
-            if file_name != 'EXTERNAL':
+            if file_name != 'EXTERNAL' and file_name != file_path:
                 parent_dependencies[file_name].append(current_function)
 
             # Add callers (parents) to the queue
