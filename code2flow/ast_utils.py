@@ -36,21 +36,13 @@ class FunctionChange:
             case _:
                 raise ValueError(f'Invalid FunctionChangeType: {self.type}')
             
-def filter_changes(changes: list):
+def filter_changes(changes: list[FunctionChange]):
     """
-    Filter changes to only retrieve relevant parent dependencies.
+    Filter changes, so that we only retrieve relevant parent dependencies.
     Only include the UPDATED functions.
     """
-    filtered_changes = []
-    print(f"Changes: {changes}")
-    for change in changes:
-        # Check if each 'change' is a dictionary and has the required keys
-        print(f"Change: {change.type}")
-        if change.type == FunctionChangeType.UPDATED:
-            filtered_changes.append(change.name)
-        else:
-            print(f"Invalid change format: {change}")
-    return filtered_changes
+    return [change.name for change in changes if change.type == FunctionChangeType.UPDATED]
+
 
 
 def get_function_changes(file_path, old_file, new_file) -> list[FunctionChange]:
