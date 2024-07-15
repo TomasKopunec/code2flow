@@ -35,16 +35,14 @@ class FunctionChange:
                 return f'Function {self.name} has been renamed with similarity of {percent}%'
             case _:
                 raise ValueError(f'Invalid FunctionChangeType: {self.type}')
-
-    def __repr__(self):
-        return f'{self.name}: ({self.type.name}={self.similarity})'
-
+            
 def filter_changes(changes: list[FunctionChange]):
     """
     Filter changes, so that we only retrieve relevant parent dependencies.
     Only include the UPDATED functions.
     """
     return [change.name for change in changes if change.type == FunctionChangeType.UPDATED]
+
 
 
 def get_function_changes(file_path, old_file, new_file) -> list[FunctionChange]:
@@ -96,6 +94,9 @@ def get_function_changes(file_path, old_file, new_file) -> list[FunctionChange]:
             similarity.append(FunctionChange(
                 old_name, FunctionChangeType.REMOVED, 0))
 
+    for simi in similarity:
+        print(f"Function: {simi.name}")
+        print(f"Type: {simi.type}")
     return similarity
 
 
