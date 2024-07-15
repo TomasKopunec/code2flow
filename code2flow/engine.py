@@ -463,7 +463,7 @@ def __get_all_calls(node):
             calls.add(n.token)
     return calls
 
-def code2flow(raw_source_paths, output_dir, hide_legend=False,
+def code2flow(raw_source_paths, output_dir, hide_legend=True,
               exclude_namespaces=None, exclude_functions=None,
               include_only_namespaces=None, include_only_functions=None,
               no_grouping=False, no_trimming=False, skip_parse_errors=False,
